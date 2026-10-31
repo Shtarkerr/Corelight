@@ -1,0 +1,116 @@
+<ui:FluentWindow
+    x:Class="Corelight.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:Corelight.App.ViewModels"
+    xmlns:views="clr-namespace:Corelight.App.Views"
+    mc:Ignorable="d"
+    d:DataContext="{d:DesignInstance vm:MainViewModel}"
+    Title="Corelight"
+    Width="1180" Height="780" MinWidth="900" MinHeight="600"
+    WindowStartupLocation="CenterScreen"
+    ExtendsContentIntoTitleBar="True"
+    WindowBackdropType="Mica"
+    WindowCornerPreference="Round">
+
+    <ui:FluentWindow.Resources>
+        <DataTemplate DataType="{x:Type vm:HomeViewModel}">
+            <views:HomeView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ScanResultsViewModel}">
+            <views:ScanResultsView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AdvancedViewModel}">
+            <views:AdvancedView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
+            <views:HistoryView />
+        </DataTemplate>
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Corelight" />
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Навигация -->
+            <DockPanel Grid.Column="0" Margin="8,4,4,12">
+                <StackPanel DockPanel.Dock="Bottom" Margin="12,0,8,0">
+                    <TextBlock Style="{StaticResource CaptionText}" Text="Без разгона · безопасно для античитов · графика не меняется" />
+                </StackPanel>
+                <ListBox
+                    ItemsSource="{Binding Items}"
+                    SelectedItem="{Binding SelectedItem}"
+                    ItemContainerStyle="{StaticResource NavItem}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:NavItem}">
+                            <StackPanel Orientation="Horizontal" Margin="4,6">
+                                <ui:SymbolIcon Symbol="{Binding Icon}" FontSize="18" Margin="0,0,12,0" />
+                                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" FontSize="14" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <!-- Содержимое -->
+            <Grid Grid.Column="1" Margin="4,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border
+                    Grid.Row="0"
+                    Margin="24,8,32,0"
+                    Style="{StaticResource Card}"
+                    Background="{DynamicResource SystemFillColorAttentionBackgroundBrush}"
+                    Visibility="{Binding State.RebootRequired, Converter={StaticResource BoolToVisibility}}">
+                    <DockPanel>
+                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="ArrowClockwise24" FontSize="20" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:Button Content="Перезагрузить сейчас" Appearance="Primary" Command="{Binding RebootCommand}" Margin="0,0,8,0" />
+                            <ui:Button Content="Позже" Command="{Binding DismissRebootCommand}" />
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource ItemTitle}" Text="Нужна перезагрузка" />
+                            <TextBlock Style="{StaticResource SecondaryText}" Text="Часть изменений вступит в силу после перезагрузки компьютера." />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" Focusable="False" />
+            </Grid>
+        </Grid>
+
+        <!-- Индикатор долгой операции: блокирует интерфейс, чтобы изменения не пересекались.
+             Заголовок окна остаётся доступным, чтобы окно можно было свернуть. -->
+        <Grid
+            Grid.Row="1"
+            Background="{DynamicResource SmokeFillColorDefaultBrush}"
+            Visibility="{Binding State.IsBusy, Converter={StaticResource BoolToVisibility}}">
+            <Border Style="{StaticResource Card}" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,24" MaxWidth="520"
+                    Background="{DynamicResource SolidBackgroundFillColorBaseBrush}">
+                <StackPanel>
+                    <ui:ProgressRing IsIndeterminate="True" HorizontalAlignment="Center" />
+                    <TextBlock Margin="0,16,0,0" Style="{StaticResource SecondaryText}" TextAlignment="Center" Text="{Binding State.BusyText}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

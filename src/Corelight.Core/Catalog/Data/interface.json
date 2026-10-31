@@ -1,0 +1,67 @@
+{
+  // Виджеты, фоновая активность и навязчивые функции оболочки.
+  // Внешний вид (анимации, прозрачность, сглаживание) сознательно не трогаем.
+  "category": "Interface",
+  "tweaks": [
+    {
+      "id": "interface.widgets",
+      "title": "Отключить виджеты",
+      "description": "Панель виджетов с новостями и погодой. Даже закрытая, она держит в памяти процессы Widgets и WebView2 и подгружает ленту из интернета.",
+      "recommended": true,
+      "impact": "Medium",
+      "requiresReboot": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Dsh", "name": "AllowNewsAndInterests", "value": "0" }
+      ]
+    },
+    {
+      "id": "interface.tips",
+      "title": "Отключить советы и рекомендации",
+      "description": "Подсказки, «предложения» в меню «Пуск» и параметрах, экран «Давайте завершим настройку устройства».",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338388Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338389Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-353694Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-353696Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SystemPaneSuggestionsEnabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SoftLandingEnabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement", "name": "ScoobeSystemSettingEnabled", "value": "0" }
+      ]
+    },
+    {
+      "id": "interface.silent-installs",
+      "title": "Запретить автоустановку рекламируемых приложений",
+      "description": "Windows сама скачивает «рекомендованные» приложения и игры (например, Candy Crush) и закрепляет их в меню «Пуск».",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SilentInstalledAppsEnabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "PreInstalledAppsEnabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "OemPreInstalledAppsEnabled", "value": "0", "default": "1" }
+      ]
+    },
+    {
+      "id": "interface.edge-background",
+      "title": "Запретить Edge работать в фоне",
+      "description": "Отключает «Ускорение запуска» и фоновый режим Microsoft Edge: после закрытия браузера его процессы перестанут висеть в памяти. Сам Edge остаётся и работает как обычно.",
+      "recommended": true,
+      "impact": "Medium",
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "StartupBoostEnabled", "value": "0" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "BackgroundModeEnabled", "value": "0" }
+      ]
+    },
+    {
+      "id": "interface.background-apps",
+      "title": "Запретить приложениям из Store работать в фоне",
+      "description": "Приложения из Microsoft Store не смогут работать, когда их окно закрыто. Обычные программы (Steam, Discord, браузеры) это не затрагивает.",
+      "warning": "Приложения из Store (Почта, Связь с телефоном, WhatsApp из Store и т.п.) перестанут присылать уведомления, пока они закрыты.",
+      "recommended": true,
+      "risk": "Caution",
+      "impact": "Medium",
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy", "name": "LetAppsRunInBackground", "value": "2" }
+      ]
+    }
+  ]
+}

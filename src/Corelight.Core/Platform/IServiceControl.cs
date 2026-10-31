@@ -1,0 +1,102 @@
+using System.ComponentModel;
+using System.ServiceProcess;
+using Microsoft.Extensions.Logging;
+
+namespace Corelight.Core.Platform;
+
+public enum ServiceStartType
+{
+    Boot,
+    System,
+    Automatic,
+    AutomaticDelayed,
+    Manual,
+    Disabled,
+}
+
+public interface IServiceControl
+{
+    /// <returns>null, если службы нет в системе.</returns>
+    ServiceStartType? GetStartType(string serviceName);
+
+    Task SetStartTypeAsync(string serviceName, ServiceStartType startType, CancellationToken ct = default);
+
+    /// <summary>Пытается остановить службу; ошибки не пробрасываются (служба отключится после перезагрузки).</summary>
+    void TryStop(string serviceName);
+
+    void TryStart(string serviceName);
+}
+
+public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunner runner, ILogger<WindowsServiceControl> log) : IServiceControl
+{
+    private const string ServicesKey = @"HKLM\SYSTEM\CurrentControlSet\Services\";
+
+    public ServiceStartType? GetStartType(string serviceName)
+    {
+        var start = registry.GetValue(ServicesKey + serviceName, "Start");
+        if (start is null)
+            return null;
+
+        var delayed = registry.GetValue(ServicesKey + serviceName, "DelayedAutostart");
+        return uint.Parse(start.Normalize().Data) switch
+        {
+            0 => ServiceStartType.Boot,
+            1 => ServiceStartType.System,
+            2 when delayed?.Normalize().Data == "1" => ServiceStartType.AutomaticDelayed,
+            2 => ServiceStartType.Automatic,
+            3 => ServiceStartType.Manual,
+            _ => ServiceStartType.Disabled,
+        };
+    }
+
+    public async Task SetStartTypeAsync(string serviceName, ServiceStartType startType, CancellationToken ct = default)
+    {
+        // sc.exe идёт через диспетчер служб, поэтому изменение вступает в силу сразу, без перезагрузки.
+        var mode = startType switch
+        {
+            ServiceStartType.Boot => "boot",
+            ServiceStartType.System => "system",
+            ServiceStartType.Automatic => "auto",
+            ServiceStartType.AutomaticDelayed => "delayed-auto",
+            ServiceStartType.Manual => "demand",
+            _ => "disabled",
+        };
+        var result = await runner.RunAsync("sc.exe", ["config", serviceName, "start=", mode], TimeSpan.FromSeconds(30), ct);
+        // Код выхода sc.exe — это код ошибки Win32, у которого есть готовое описание на языке системы.
+        if (!result.Succeeded)
+            throw new InvalidOperationException($"Не удалось изменить тип запуска службы {serviceName}: {new Win32Exception(result.ExitCode).Message}");
+    }
+
+    public void TryStop(string serviceName)
+    {
+        try
+        {
+            using var sc = new ServiceController(serviceName);
+            if (sc.Status is ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending)
+                return;
+            if (!sc.CanStop)
+                return;
+            sc.Stop();
+            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or System.ServiceProcess.TimeoutException)
+        {
+            log.LogWarning(ex, "Служба {Service} не остановлена сразу; изменения вступят в силу после перезагрузки", serviceName);
+        }
+    }
+
+    public void TryStart(string serviceName)
+    {
+        try
+        {
+            using var sc = new ServiceController(serviceName);
+            if (sc.Status is ServiceControllerStatus.Running or ServiceControllerStatus.StartPending)
+                return;
+            sc.Start();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
+        {
+            log.LogWarning(ex, "Не удалось запустить службу {Service}", serviceName);
+        }
+    }
+}

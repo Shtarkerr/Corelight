@@ -1,0 +1,67 @@
+<UserControl
+    x:Class="Corelight.App.Views.HistoryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:Corelight.App.ViewModels"
+    mc:Ignorable="d"
+    d:DataContext="{d:DesignInstance vm:HistoryViewModel}">
+
+    <Grid Margin="24,16,32,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Style="{StaticResource PageTitle}" Text="История и откат" />
+            <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
+                       Text="Здесь все изменения, сделанные программой. Откат возвращает именно те значения, которые были до оптимизации." />
+        </StackPanel>
+
+        <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:Button Content="Восстановление системы" Icon="{ui:SymbolIcon History24}"
+                               Command="{Binding OpenSystemRestoreCommand}" Margin="0,0,8,0" />
+                    <ui:Button Content="Откатить всё" Appearance="Danger" Icon="{ui:SymbolIcon ArrowUndo24}"
+                               Command="{Binding RevertAllCommand}" />
+                </StackPanel>
+                <TextBlock Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,16,0"
+                           Text="Если что-то пошло совсем не так, можно вернуть систему целиком через точку восстановления Windows, созданную перед оптимизацией." />
+            </DockPanel>
+        </Border>
+
+        <TextBlock Grid.Row="2" Style="{StaticResource SecondaryText}" Text="Программа пока ничего не меняла."
+                   Visibility="{Binding HasNoItems, Converter={StaticResource BoolToVisibility}}" />
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:HistoryItemViewModel}">
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,6">
+                            <DockPanel>
+                                <ui:Button DockPanel.Dock="Right" VerticalAlignment="Center" Content="Откатить"
+                                           Icon="{ui:SymbolIcon ArrowUndo24}"
+                                           IsEnabled="{Binding CanRevert}"
+                                           Command="{Binding DataContext.RevertCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                           CommandParameter="{Binding}" />
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
+                                    <TextBlock Margin="0,2,0,0" Style="{StaticResource CaptionText}">
+                                        <Run Text="{Binding CategoryText, Mode=OneWay}" />
+                                        <Run Text="·" />
+                                        <Run Text="{Binding AppliedAtText, Mode=OneWay}" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

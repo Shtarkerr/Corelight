@@ -1,0 +1,128 @@
+{
+  // Телеметрия и приватность: сбор данных, реклама, фоновые задачи диагностики.
+  "category": "Privacy",
+  "tweaks": [
+    {
+      "id": "privacy.telemetry-level",
+      "title": "Минимальный уровень телеметрии",
+      "description": "Снижает объём диагностических данных, которые Windows отправляет в Microsoft, до минимума, разрешённого вашей редакцией. На Home и Pro это уровень «обязательные данные».",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "AllowTelemetry", "value": "0" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "DoNotShowFeedbackNotifications", "value": "1" }
+      ]
+    },
+    {
+      "id": "privacy.diagtrack",
+      "title": "Отключить службу телеметрии",
+      "description": "Служба «Функциональные возможности для подключённых пользователей и телеметрия» (DiagTrack) и служба маршрутизации push-сообщений собирают и отправляют данные об использовании системы. Периодически нагружают диск и сеть.",
+      "recommended": true,
+      "impact": "Medium",
+      "actions": [
+        { "type": "service", "service": "DiagTrack", "startType": "Disabled", "default": "Automatic" },
+        { "type": "service", "service": "dmwappushservice", "startType": "Disabled", "default": "Manual", "optional": true }
+      ]
+    },
+    {
+      "id": "privacy.ceip-tasks",
+      "title": "Отключить задачи сбора данных",
+      "description": "Задачи планировщика программы улучшения качества и проверки совместимости (Compatibility Appraiser и др.). Они запускаются в фоне и могут на минуты загрузить процессор и диск, вызывая фризы в играх.",
+      "recommended": true,
+      "impact": "Medium",
+      "actions": [
+        { "type": "task", "path": "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser Exp", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Application Experience\\PcaPatchDbTask", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Autochk\\Proxy", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\DiskDiagnostic\\Microsoft-Windows-DiskDiagnosticDataCollector", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Feedback\\Siuf\\DmClient", "optional": true },
+        { "type": "task", "path": "\\Microsoft\\Windows\\Feedback\\Siuf\\DmClientOnScenarioDownload", "optional": true }
+      ]
+    },
+    {
+      "id": "privacy.error-reporting",
+      "title": "Отключить отчёты об ошибках Windows",
+      "description": "После каждого сбоя программы Windows собирает дамп и отправляет его в Microsoft. На стабильность самих программ это не влияет.",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting", "name": "Disabled", "value": "1" },
+        { "type": "service", "service": "WerSvc", "startType": "Disabled", "default": "Manual", "optional": true }
+      ]
+    },
+    {
+      "id": "privacy.advertising-id",
+      "title": "Отключить рекламный идентификатор",
+      "description": "Уникальный ID, по которому приложения показывают персонализированную рекламу.",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo", "name": "Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo", "name": "DisabledByGroupPolicy", "value": "1" }
+      ]
+    },
+    {
+      "id": "privacy.tailored-experiences",
+      "title": "Отключить персонализированные предложения",
+      "description": "Microsoft использует диагностические данные, чтобы показывать вам советы, рекламу и рекомендации.",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy", "name": "TailoredExperiencesWithDiagnosticDataEnabled", "value": "0", "default": "1" }
+      ]
+    },
+    {
+      "id": "privacy.activity-history",
+      "title": "Отключить журнал действий",
+      "description": "Windows записывает, какие файлы, сайты и приложения вы открывали. Сейчас эти данные почти нигде не используются.",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "EnableActivityFeed", "value": "0" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "PublishUserActivities", "value": "0" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "UploadUserActivities", "value": "0" }
+      ]
+    },
+    {
+      "id": "privacy.feedback-requests",
+      "title": "Не запрашивать отзывы",
+      "description": "Windows перестанет показывать всплывающие опросы «Оцените Windows».",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Siuf\\Rules", "name": "NumberOfSIUFInPeriod", "value": "0" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Siuf\\Rules", "name": "PeriodInNanoSeconds", "kind": "QWord", "value": "0" }
+      ]
+    },
+    {
+      "id": "privacy.recall",
+      "title": "Отключить Recall (снимки экрана ИИ)",
+      "description": "Функция Copilot+ PC, которая регулярно делает снимки экрана и индексирует их для поиска. Расходует ресурсы и место на диске.",
+      "recommended": true,
+      "minBuild": 26100,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "value": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "value": "1" }
+      ]
+    },
+    {
+      "id": "privacy.bing-search",
+      "title": "Убрать поиск Bing из меню «Пуск»",
+      "description": "Поиск в «Пуске» будет искать только на компьютере, без отправки запросов в Bing. Работает быстрее и не показывает веб-результаты.",
+      "recommended": true,
+      "requiresReboot": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\Explorer", "name": "DisableSearchBoxSuggestions", "value": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "BingSearchEnabled", "value": "0" }
+      ]
+    },
+    {
+      "id": "privacy.location",
+      "title": "Отключить службу геолокации",
+      "description": "Служба определения местоположения для приложений.",
+      "warning": "Перестанут работать определение местоположения в погоде и картах, автоматический часовой пояс и функция «Поиск устройства».",
+      "risk": "Caution",
+      "actions": [
+        { "type": "service", "service": "lfsvc", "startType": "Disabled", "default": "Manual" }
+      ]
+    }
+  ]
+}

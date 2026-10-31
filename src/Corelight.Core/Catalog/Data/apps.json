@@ -1,0 +1,205 @@
+{
+  // Предустановленные приложения. «Применено» = приложение удалено.
+  // Магазин, App Installer (winget), Edge/WebView2, системные библиотеки и Xbox Identity Provider
+  // удалять запрещено валидатором.
+  "category": "Apps",
+  "tweaks": [
+    {
+      "id": "apps.clipchamp",
+      "title": "Clipchamp",
+      "description": "Видеоредактор Microsoft с облачными функциями. Если вы не монтируете видео в нём, он только занимает место и обновляется в фоне.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Clipchamp.Clipchamp", "storeId": "9P1J8S7CCWWT" } ]
+    },
+    {
+      "id": "apps.bing-news",
+      "title": "Новости (Microsoft News)",
+      "description": "Лента новостей от MSN. Периодически обновляет контент в фоне.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.BingNews", "storeId": "9WZDNCRFHVFW" } ]
+    },
+    {
+      "id": "apps.bing-weather",
+      "title": "Погода (MSN Weather)",
+      "description": "Приложение прогноза погоды. Погоду также показывают виджеты и браузер.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.BingWeather", "storeId": "9WZDNCRFJ3Q2" } ]
+    },
+    {
+      "id": "apps.get-help",
+      "title": "Техническая поддержка (Get Help)",
+      "description": "Чат с поддержкой Microsoft и средства устранения неполадок. Встроенные средства устранения неполадок в «Параметрах» продолжат работать.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.GetHelp", "storeId": "9PKDZBMV1H3T" } ]
+    },
+    {
+      "id": "apps.tips",
+      "title": "Советы (Tips)",
+      "description": "Подсказки о возможностях Windows для новых пользователей.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.Getstarted" } ]
+    },
+    {
+      "id": "apps.solitaire",
+      "title": "Microsoft Solitaire Collection",
+      "description": "Сборник карточных игр с рекламой и онлайн-функциями.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftSolitaireCollection", "storeId": "9WZDNCRFHWD2" } ]
+    },
+    {
+      "id": "apps.todo",
+      "title": "Microsoft To Do",
+      "description": "Списки задач с синхронизацией через учётную запись Microsoft. Удаляйте, если не пользуетесь.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.Todos", "storeId": "9NBLGGH5R558" } ]
+    },
+    {
+      "id": "apps.feedback-hub",
+      "title": "Центр отзывов (Feedback Hub)",
+      "description": "Отправка отзывов и отчётов об ошибках в Microsoft. Нужен в основном участникам программы Windows Insider.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.WindowsFeedbackHub", "storeId": "9NBLGGH4R32N" } ]
+    },
+    {
+      "id": "apps.maps",
+      "title": "Карты Windows",
+      "description": "Офлайн-карты Microsoft. Приложение больше не развивается, вместо него обычно используют карты в браузере.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.WindowsMaps", "storeId": "9WZDNCRDTBVB" } ]
+    },
+    {
+      "id": "apps.office-hub",
+      "title": "Microsoft 365 (Office)",
+      "description": "Приложение-витрина для облачного Office и подписки Microsoft 365. Сами программы Office (Word, Excel), если установлены, не затрагиваются.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftOfficeHub", "storeId": "9WZDNCRD29V9" } ]
+    },
+    {
+      "id": "apps.outlook-new",
+      "title": "Outlook (новый)",
+      "description": "Новый почтовый клиент Outlook. Если пользуетесь почтой в браузере или другим клиентом, можно удалить.",
+      "recommended": true,
+      "risk": "Caution",
+      "actions": [ { "type": "appx", "package": "Microsoft.OutlookForWindows", "storeId": "9NRX63209R7B" } ]
+    },
+    {
+      "id": "apps.teams-personal",
+      "title": "Microsoft Teams (личный)",
+      "description": "Бесплатный Teams для личного общения. Запускается вместе с Windows и держит процессы в фоне. Удаляйте, если не используете Teams.",
+      "recommended": true,
+      "risk": "Caution",
+      "impact": "Medium",
+      "actions": [
+        { "type": "appx", "package": "MSTeams" },
+        { "type": "appx", "package": "MicrosoftTeams", "optional": true }
+      ]
+    },
+    {
+      "id": "apps.power-automate",
+      "title": "Power Automate",
+      "description": "Инструмент автоматизации рутинных действий на ПК. Нужен немногим пользователям.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.PowerAutomateDesktop", "storeId": "9NFTCH6J7FHV" } ]
+    },
+    {
+      "id": "apps.family",
+      "title": "Microsoft Family Safety",
+      "description": "Родительский контроль для детских учётных записей. Если дети не пользуются этим ПК, приложение не нужно.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "MicrosoftCorporationII.MicrosoftFamily", "storeId": "9PDJDJS743XF" } ]
+    },
+    {
+      "id": "apps.quick-assist",
+      "title": "Быстрая помощь (Quick Assist)",
+      "description": "Удалённое подключение к ПК для помощи. Мошенники часто просят открыть именно его. Удаляйте, если не пользуетесь.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "MicrosoftCorporationII.QuickAssist", "storeId": "9P7BP5VNWKX5" } ]
+    },
+    {
+      "id": "apps.copilot",
+      "title": "Copilot",
+      "description": "ИИ-ассистент Microsoft. Работает через интернет; если не пользуетесь, его можно убрать вместе с кнопкой на панели задач.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.Copilot", "storeId": "9NHT9RB2F4HD" } ]
+    },
+    {
+      "id": "apps.dev-home",
+      "title": "Dev Home",
+      "description": "Панель для разработчиков. Microsoft прекратила её развитие, обычным пользователям она не нужна.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.Windows.DevHome" } ]
+    },
+    {
+      "id": "apps.cortana",
+      "title": "Кортана",
+      "description": "Старый голосовой помощник, который Microsoft уже закрыла. Не работает, но может оставаться в системе.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.549981C3F5F10" } ]
+    },
+    {
+      "id": "apps.skype",
+      "title": "Skype",
+      "description": "Мессенджер Microsoft, закрытый в 2025 году. Если остался в системе — можно удалять.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.SkypeApp" } ]
+    },
+    {
+      "id": "apps.movies-tv",
+      "title": "Кино и ТВ",
+      "description": "Устаревший видеоплеер с магазином фильмов. Локальные видео открывает и «Медиаплеер».",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.ZuneVideo", "storeId": "9WZDNCRFJ3P2" } ]
+    },
+    {
+      "id": "apps.mixed-reality",
+      "title": "Портал смешанной реальности",
+      "description": "Нужен только для VR-шлемов Windows Mixed Reality, поддержку которых Microsoft прекратила.",
+      "recommended": true,
+      "actions": [ { "type": "appx", "package": "Microsoft.MixedReality.Portal" } ]
+    },
+    {
+      "id": "apps.phone-link",
+      "title": "Связь с телефоном (Phone Link)",
+      "description": "Уведомления, звонки и SMS со смартфона на ПК. Работает в фоне. Удаляйте, только если не связываете телефон с компьютером.",
+      "risk": "Caution",
+      "actions": [ { "type": "appx", "package": "Microsoft.YourPhone", "storeId": "9NMPJ99VJBWV" } ]
+    },
+    {
+      "id": "apps.media-player",
+      "title": "Медиаплеер",
+      "description": "Стандартный проигрыватель музыки и видео Windows 11. Удаляйте, только если у вас есть другой плеер (например, VLC).",
+      "risk": "Caution",
+      "actions": [ { "type": "appx", "package": "Microsoft.ZuneMusic", "storeId": "9WZDNCRFJ3PT" } ]
+    },
+    {
+      "id": "apps.photos",
+      "title": "Фотографии",
+      "description": "Стандартный просмотрщик изображений. Без него картинки придётся открывать другой программой.",
+      "risk": "Caution",
+      "actions": [ { "type": "appx", "package": "Microsoft.Windows.Photos", "storeId": "9WZDNCRFJBH4" } ]
+    },
+    {
+      "id": "apps.web-experience",
+      "title": "Пакет виджетов (Web Experience Pack)",
+      "description": "Компонент, на котором работают виджеты. Чтобы просто убрать виджеты, достаточно твика «Отключить виджеты» в разделе «Интерфейс и фон».",
+      "risk": "Caution",
+      "actions": [ { "type": "appx", "package": "MicrosoftWindows.Client.WebExperience", "storeId": "9MSSGKG348SP" } ]
+    },
+    {
+      "id": "apps.xbox",
+      "title": "Приложение Xbox",
+      "description": "Каталог Game Pass, установка и запуск игр из него, друзья Xbox.",
+      "warning": "Без приложения Xbox не установить и не обновить игры из Game Pass для ПК. Удаляйте, только если не пользуетесь Game Pass.",
+      "risk": "Advanced",
+      "actions": [ { "type": "appx", "package": "Microsoft.GamingApp", "storeId": "9MV0B5HZVK9Z" } ]
+    },
+    {
+      "id": "apps.xbox-game-bar",
+      "title": "Xbox Game Bar",
+      "description": "Оверлей по Win+G: запись экрана, счётчик FPS, чат Xbox.",
+      "warning": "Пропадут запись игр по Win+Alt+R, оверлей Win+G и счётчик производительности. Некоторые игры из Microsoft Store используют Game Bar для приглашений и достижений.",
+      "risk": "Advanced",
+      "actions": [ { "type": "appx", "package": "Microsoft.XboxGamingOverlay", "storeId": "9NZKPSTSNW4P" } ]
+    }
+  ]
+}

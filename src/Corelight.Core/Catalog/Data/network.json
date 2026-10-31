@@ -1,0 +1,36 @@
+{
+  // Сеть. Только системные параметры, никаких изменений DNS, hosts-файла или драйверов сетевой карты.
+  "category": "Network",
+  "tweaks": [
+    {
+      "id": "network.delivery-optimization",
+      "title": "Отключить раздачу обновлений другим ПК",
+      "description": "Оптимизация доставки по умолчанию раздаёт скачанные обновления Windows другим компьютерам через ваш интернет. После отключения обновления по-прежнему скачиваются, но только с серверов Microsoft.",
+      "recommended": true,
+      "impact": "Medium",
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization", "name": "DODownloadMode", "value": "0" }
+      ]
+    },
+    {
+      "id": "network.throttling",
+      "title": "Отключить ограничение сети для мультимедиа",
+      "description": "Windows искусственно ограничивает обработку сетевых пакетов во время воспроизведения мультимедиа. Отключение может уменьшить скачки пинга, когда параллельно играет музыка или видео.",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "NetworkThrottlingIndex", "value": "0xFFFFFFFF", "default": "10" }
+      ]
+    },
+    {
+      "id": "network.nagle",
+      "title": "Отключить алгоритм Нейгла",
+      "description": "Нейгл объединяет мелкие TCP-пакеты, что может добавлять задержку. Большинство онлайн-игр используют UDP или уже отключают его сами, поэтому эффект обычно минимален.",
+      "warning": "Эффект не гарантирован и зависит от игры. Применяйте, если хотите проверить на своей системе.",
+      "risk": "Advanced",
+      "requiresReboot": true,
+      "actions": [
+        { "type": "tcpNoDelay" }
+      ]
+    }
+  ]
+}

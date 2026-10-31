@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Corelight.App/Corelight.App.csproj" />
+    <Project Path="src/Corelight.Core/Corelight.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Corelight.Tests/Corelight.Tests.csproj" />
+  </Folder>
+</Solution>

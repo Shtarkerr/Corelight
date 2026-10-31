@@ -1,0 +1,102 @@
+<UserControl
+    x:Class="Corelight.App.Views.ScanResultsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:Corelight.App.ViewModels"
+    mc:Ignorable="d"
+    d:DataContext="{d:DesignInstance vm:ScanResultsViewModel}">
+
+    <Grid Margin="24,16,32,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Результаты сканирования" />
+            <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
+                       Text="Безопасные рекомендации уже отмечены. Пункты «Осторожно» отключают функции, которыми кто-то пользуется, поэтому отметьте их сами, если они вам не нужны." />
+        </StackPanel>
+
+        <!-- Сканирования ещё не было -->
+        <Border Grid.Row="1" Style="{StaticResource Card}" VerticalAlignment="Top" Padding="20"
+                Visibility="{Binding HasNoScan, Converter={StaticResource BoolToVisibility}}">
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Right" Content="На главную" Command="{Binding GoHomeCommand}" VerticalAlignment="Center" />
+                <TextBlock Style="{StaticResource SecondaryText}" VerticalAlignment="Center"
+                           Text="Сканирование ещё не запускалось. Запустите его на главной странице." />
+            </DockPanel>
+        </Border>
+
+        <!-- Всё уже оптимизировано -->
+        <Border Grid.Row="1" Style="{StaticResource Card}" VerticalAlignment="Top" Padding="20"
+                Visibility="{Binding HasNoSuggestions, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="28" Margin="0,0,16,0" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource ItemTitle}" Text="Всё рекомендованное уже применено" />
+                    <TextBlock Style="{StaticResource SecondaryText}" Text="Дополнительные настройки можно посмотреть в разделе «Расширенное»." />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Groups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:ScanGroupViewModel}">
+                        <StackPanel Margin="0,0,0,16">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <ui:SymbolIcon Symbol="{Binding Info.Icon}" FontSize="20" Margin="0,0,10,0" />
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="{Binding Info.Title}" />
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Items}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:ScanItemViewModel}">
+                                        <Border Style="{StaticResource Card}" Margin="0,0,0,6">
+                                            <DockPanel>
+                                                <CheckBox DockPanel.Dock="Left" VerticalAlignment="Top" Margin="0,2,8,0"
+                                                          IsChecked="{Binding IsSelected}" />
+                                                <StackPanel>
+                                                    <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
+                                                    <TextBlock Margin="0,2,0,0" Style="{StaticResource SecondaryText}" Text="{Binding Description}" />
+                                                    <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding Warning}"
+                                                               Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
+                                                    <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TweakBadges}" />
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Нижняя панель -->
+        <Border Grid.Row="2" Margin="0,12,0,0" Style="{StaticResource Card}"
+                Visibility="{Binding HasScan, Converter={StaticResource BoolToVisibility}}">
+            <DockPanel>
+                <ui:Button DockPanel.Dock="Right" Appearance="Primary" Padding="20,8"
+                           Icon="{ui:SymbolIcon Checkmark24}"
+                           Content="Применить выбранное"
+                           Command="{Binding ApplyCommand}" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center" Style="{StaticResource SecondaryText}">
+                        <Run Text="Выбрано:" />
+                        <Run Text="{Binding SelectedCount, Mode=OneWay}" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        <Run Text="из" />
+                        <Run Text="{Binding TotalCount, Mode=OneWay}" />
+                    </TextBlock>
+                    <ui:Button Margin="16,0,0,0" Appearance="Transparent" Content="Выбрать все" Command="{Binding SelectAllCommand}" />
+                    <ui:Button Margin="4,0,0,0" Appearance="Transparent" Content="Снять все" Command="{Binding SelectNoneCommand}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

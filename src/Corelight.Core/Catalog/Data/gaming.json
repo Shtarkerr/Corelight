@@ -1,0 +1,106 @@
+{
+  // Игровые настройки. Только штатные параметры Windows: никакого разгона, драйверов,
+  // изменения частот или вмешательства в процессы игр.
+  "category": "Gaming",
+  "tweaks": [
+    {
+      "id": "gaming.game-mode",
+      "title": "Включить игровой режим",
+      "description": "Штатный режим Windows: во время игры приоритет отдаётся игре, а фоновые обновления и уведомления откладываются.",
+      "recommended": true,
+      "impact": "Medium",
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\GameBar", "name": "AutoGameModeEnabled", "value": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\GameBar", "name": "AllowAutoGameMode", "value": "1" }
+      ]
+    },
+    {
+      "id": "gaming.game-dvr",
+      "title": "Отключить фоновую запись игр (Game DVR)",
+      "description": "Функция «Записать последние моменты» постоянно пишет видео игры в буфер и нагружает видеокарту и диск.",
+      "warning": "Перестанет работать запись игр через Xbox Game Bar (Win+Alt+R). Запись через NVIDIA/AMD/OBS не затрагивается.",
+      "recommended": true,
+      "risk": "Caution",
+      "impact": "High",
+      "actions": [
+        { "type": "registry", "path": "HKCU\\System\\GameConfigStore", "name": "GameDVR_Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR", "name": "AppCaptureEnabled", "value": "0" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR", "name": "HistoricalCaptureEnabled", "value": "0" }
+      ]
+    },
+    {
+      "id": "gaming.hags",
+      "title": "Включить аппаратное планирование GPU (HAGS)",
+      "description": "Видеокарта сама управляет своей памятью и очередью кадров, разгружая процессор. Обычно снижает задержку и нужно для генерации кадров DLSS 3. Это настройка Windows, а не разгон.",
+      "recommended": true,
+      "impact": "Medium",
+      "requiresReboot": true,
+      "requires": [ "hagsSupported" ],
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", "name": "HwSchMode", "value": "2" }
+      ]
+    },
+    {
+      "id": "gaming.windowed-optimizations",
+      "title": "Включить оптимизацию для игр в окне",
+      "description": "Игры в оконном и безрамочном режиме DirectX 10/11 получают современную модель вывода кадров: ниже задержка, работает VRR. Другие настройки графики (Auto HDR и т.п.) не меняются.",
+      "recommended": true,
+      "impact": "Medium",
+      "minBuild": 22000,
+      "actions": [
+        { "type": "registryListEntry", "path": "HKCU\\Software\\Microsoft\\DirectX\\UserGpuPreferences", "name": "DirectXUserGlobalSettings", "key": "SwapEffectUpgradeEnable", "value": "1" }
+      ]
+    },
+    {
+      "id": "gaming.mmcss-games",
+      "title": "Повысить приоритет игр в планировщике мультимедиа",
+      "description": "Штатный профиль «Games» службы MMCSS: игры, которые его используют, получают более высокий приоритет процессора и ввода-вывода. Фоновым задачам остаётся 10% процессора вместо 20%.",
+      "recommended": true,
+      "actions": [
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "SystemResponsiveness", "value": "10", "default": "20" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games", "name": "GPU Priority", "value": "8", "default": "8" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games", "name": "Priority", "value": "6", "default": "2" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games", "name": "Scheduling Category", "kind": "String", "value": "High", "default": "Medium" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games", "name": "SFIO Priority", "kind": "String", "value": "High", "default": "Normal" }
+      ]
+    },
+    {
+      "id": "gaming.power-high",
+      "title": "Схема питания «Высокая производительность»",
+      "description": "Штатная схема Windows: процессор не уходит в глубокое энергосбережение и быстрее реагирует на нагрузку. Частоты и напряжения не меняются — разгона нет.",
+      "warning": "Энергопотребление и нагрев в простое немного вырастут. На ноутбуке от батареи это сократит время работы.",
+      "recommended": true,
+      "impact": "Medium",
+      "recommendWhen": [ "desktop" ],
+      "exclusiveGroup": "powerPlan",
+      "actions": [
+        { "type": "powerPlan", "scheme": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", "copyGuid": "6f1c2a4e-3b7d-4e0a-9c51-0d2b8f7a1e01" }
+      ]
+    },
+    {
+      "id": "gaming.power-ultimate",
+      "title": "Схема питания «Максимальная производительность»",
+      "description": "Скрытая штатная схема Windows для рабочих станций: полностью отключает энергосбережение процессора и устройств. Прирост по сравнению с «Высокой производительностью» обычно небольшой.",
+      "warning": "Заметно выше энергопотребление и нагрев в простое. Не рекомендуется для ноутбуков.",
+      "risk": "Advanced",
+      "exclusiveGroup": "powerPlan",
+      "actions": [
+        { "type": "powerPlan", "scheme": "e9a42b02-d5df-448d-aa00-03f14749eb61", "copyGuid": "6f1c2a4e-3b7d-4e0a-9c51-0d2b8f7a1e02" }
+      ]
+    },
+    {
+      "id": "gaming.mouse-precision",
+      "title": "Отключить «Повышенную точность указателя»",
+      "description": "Это ускорение мыши: курсор проходит разное расстояние в зависимости от скорости движения. Без него движение мыши в играх и на рабочем столе становится одинаковым и предсказуемым.",
+      "warning": "Курсор на рабочем столе будет ощущаться иначе. Это дело вкуса, поэтому твик не включается автоматически.",
+      "recommended": true,
+      "risk": "Caution",
+      "requiresReboot": true,
+      "actions": [
+        { "type": "registry", "path": "HKCU\\Control Panel\\Mouse", "name": "MouseSpeed", "kind": "String", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Control Panel\\Mouse", "name": "MouseThreshold1", "kind": "String", "value": "0", "default": "6" },
+        { "type": "registry", "path": "HKCU\\Control Panel\\Mouse", "name": "MouseThreshold2", "kind": "String", "value": "0", "default": "10" }
+      ]
+    }
+  ]
+}

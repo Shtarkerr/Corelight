@@ -1,0 +1,4 @@
+# В репозитории переводы строк хранятся как LF, на Windows при checkout получаются CRLF.
+* text=auto
+*.png binary
+*.ico binary

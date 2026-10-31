@@ -1,0 +1,91 @@
+{
+  // Службы, которые на типичном домашнем игровом ПК не нужны.
+  // Безопасность, обновления, магазин, игровые сервисы и античиты защищены валидатором.
+  "category": "Services",
+  "tweaks": [
+    {
+      "id": "services.fax",
+      "title": "Факс",
+      "description": "Служба отправки и приёма факсов через модем.",
+      "recommended": true,
+      "actions": [ { "type": "service", "service": "Fax", "startType": "Disabled", "default": "Manual" } ]
+    },
+    {
+      "id": "services.retail-demo",
+      "title": "Демонстрационный режим для магазинов",
+      "description": "Служба витринного режима, который включают на выставочных образцах в магазинах электроники.",
+      "recommended": true,
+      "actions": [ { "type": "service", "service": "RetailDemo", "startType": "Disabled", "default": "Manual" } ]
+    },
+    {
+      "id": "services.maps-broker",
+      "title": "Диспетчер скачанных карт",
+      "description": "Обновляет офлайн-карты для приложения «Карты Windows».",
+      "recommended": true,
+      "actions": [ { "type": "service", "service": "MapsBroker", "startType": "Disabled", "default": "AutomaticDelayed" } ]
+    },
+    {
+      "id": "services.link-tracking",
+      "title": "Клиент отслеживания изменившихся связей",
+      "description": "Следит за перемещением файлов по NTFS-томам в локальной сети, чтобы ярлыки не ломались. На домашнем ПК почти не используется.",
+      "recommended": true,
+      "actions": [ { "type": "service", "service": "TrkWks", "startType": "Disabled", "default": "Automatic" } ]
+    },
+    {
+      "id": "services.print-spooler",
+      "title": "Диспетчер печати",
+      "description": "Нужен для работы принтеров. Если принтера нет, служба просто занимает память.",
+      "warning": "Если позже подключите принтер, верните эту службу, иначе печать не заработает.",
+      "recommended": true,
+      "risk": "Caution",
+      "recommendWhen": [ "noPrinter" ],
+      "actions": [ { "type": "service", "service": "Spooler", "startType": "Disabled", "default": "Automatic" } ]
+    },
+    {
+      "id": "services.bluetooth",
+      "title": "Служба поддержки Bluetooth",
+      "description": "Нужна для работы Bluetooth-устройств. Без Bluetooth-адаптера она бесполезна.",
+      "warning": "Bluetooth-наушники, геймпады и мыши перестанут подключаться, пока служба отключена.",
+      "recommended": true,
+      "risk": "Caution",
+      "recommendWhen": [ "noBluetooth" ],
+      "actions": [ { "type": "service", "service": "bthserv", "startType": "Disabled", "default": "Manual" } ]
+    },
+    {
+      "id": "services.parental-controls",
+      "title": "Родительский контроль",
+      "description": "Применяет ограничения Microsoft Family к детским учётным записям.",
+      "warning": "Если на этом ПК есть детская учётная запись, ограничения перестанут действовать.",
+      "risk": "Caution",
+      "actions": [ { "type": "service", "service": "WpcMonSvc", "startType": "Disabled", "default": "Manual" } ]
+    },
+    {
+      "id": "services.sysmain",
+      "title": "SysMain (SuperFetch)",
+      "description": "Заранее загружает часто используемые программы в память. На SSD пользы мало, а иногда служба вызывает фоновую нагрузку на диск.",
+      "warning": "На HDD программы и игры могут запускаться заметно медленнее.",
+      "risk": "Advanced",
+      "actions": [ { "type": "service", "service": "SysMain", "startType": "Disabled", "default": "Automatic" } ]
+    },
+    {
+      "id": "services.search-indexer",
+      "title": "Индексатор поиска Windows",
+      "description": "Индексирует файлы для быстрого поиска. Периодически нагружает диск и процессор, особенно после установки игр.",
+      "warning": "Поиск файлов в «Проводнике» и меню «Пуск» станет медленным, а поиск по содержимому документов и писем перестанет работать.",
+      "risk": "Advanced",
+      "actions": [ { "type": "service", "service": "WSearch", "startType": "Disabled", "default": "AutomaticDelayed" } ]
+    },
+    {
+      "id": "services.xbox-live",
+      "title": "Службы Xbox Live",
+      "description": "Вход в Xbox Live и облачные сохранения для игр из Microsoft Store и Game Pass.",
+      "warning": "Игры из Game Pass и Microsoft Store не смогут войти в Xbox Live и синхронизировать сохранения. Игры Steam и других лаунчеров это не затрагивает.",
+      "risk": "Advanced",
+      "actions": [
+        { "type": "service", "service": "XblAuthManager", "startType": "Disabled", "default": "Manual" },
+        { "type": "service", "service": "XblGameSave", "startType": "Disabled", "default": "Manual" },
+        { "type": "service", "service": "XboxNetApiSvc", "startType": "Disabled", "default": "Manual" }
+      ]
+    }
+  ]
+}
