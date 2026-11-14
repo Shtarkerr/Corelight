@@ -43,6 +43,8 @@
                         <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding Warning}"
                                    Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock Style="{StaticResource OptionalCaption}" Text="{Binding ActionHint}" />
+                        <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding AvailabilityNote}"
+                                   Visibility="{Binding HasAvailabilityNote, Converter={StaticResource BoolToVisibility}}" />
                         <WrapPanel Margin="0,6,0,0">
                             <Border Style="{StaticResource RiskBadge}">
                                 <TextBlock FontSize="11" Text="{Binding RiskText}" />

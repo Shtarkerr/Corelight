@@ -36,12 +36,15 @@ public class CatalogTests
     [InlineData("""{ "type": "registry", "path": "HKCU\\Control Panel\\Desktop", "name": "MenuShowDelay", "kind": "String", "value": "0" }""")]
     [InlineData("""{ "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\vgk", "name": "Start", "value": "4" }""")]
     [InlineData("""{ "type": "registry", "path": "HKLM\\SYSTEM\\ControlSet001\\Services\\WinDefend\\Parameters", "name": "X", "value": "1" }""")]
+    [InlineData("""{ "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\\\Services\\\\WinDefend", "name": "Start", "value": "4" }""")]
+    [InlineData("""{ "type": "registry", "path": "HKCU\\Control Panel\\\\Desktop", "name": "MenuShowDelay", "kind": "String", "value": "0" }""")]
     [InlineData("""{ "type": "service", "service": "WinDefend" }""")]
     [InlineData("""{ "type": "service", "service": "vgc" }""")]
     [InlineData("""{ "type": "service", "service": "wuauserv" }""")]
     [InlineData("""{ "type": "appx", "package": "Microsoft.WindowsStore" }""")]
     [InlineData("""{ "type": "appx", "package": "Microsoft.MicrosoftEdge.Stable" }""")]
     [InlineData("""{ "type": "task", "path": "\\Microsoft\\Windows\\WindowsUpdate\\Scheduled Start" }""")]
+    [InlineData("""{ "type": "task", "path": "\\Microsoft\\\\Windows\\WindowsUpdate\\Scheduled Start" }""")]
     [InlineData("""{ "type": "powerPlan", "scheme": "11111111-2222-3333-4444-555555555555", "copyGuid": "6f1c2a4e-3b7d-4e0a-9c51-0d2b8f7a1e09" }""")]
     public void Guardrails_reject_forbidden_targets(string actionJson)
     {
@@ -73,5 +76,21 @@ public class CatalogTests
 
         Assert.Single(catalog.Tweaks);
         Assert.Equal(2, catalog.Rejected.Count);
+    }
+
+    [Theory]
+    [InlineData("file:///C:/Windows/System32/cmd.exe")]
+    [InlineData("http://example.com/install")]
+    [InlineData("ms-settings:windowsupdate")]
+    public void Restore_help_links_require_https(string url)
+    {
+        var tweak = new TweakDefinition
+        {
+            Id = "test", Title = "Test", Description = "Test",
+            Actions = [new Corelight.Core.Actions.AppxPackageAction { Package = "Example.App" }],
+            RestoreHelpUrl = url
+        };
+
+        Assert.NotEmpty(GuardrailValidator.Validate(tweak));
     }
 }

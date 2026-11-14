@@ -264,6 +264,9 @@ Generated_Code/
 # because we have git ;-)
 _UpgradeReport_Files/
 Backup*/
+# Исходники хранилища резервных копий входят в проект.
+!src/Corelight.Core/Backup/
+!src/Corelight.Core/Backup/**
 UpgradeLog*.XML
 UpgradeLog*.htm
 ServiceFabricBackup/

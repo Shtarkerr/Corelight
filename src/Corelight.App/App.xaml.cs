@@ -90,6 +90,7 @@ public partial class App : Application
         services.AddSingleton<IScheduledTaskControl, WindowsScheduledTaskControl>();
         services.AddSingleton<IAppxControl, WindowsAppxControl>();
         services.AddSingleton<IPowerControl, WindowsPowerControl>();
+        services.AddSingleton<IOneDriveControl, WindowsOneDriveControl>();
         services.AddSingleton<PlatformServices>();
 
         // Ядро

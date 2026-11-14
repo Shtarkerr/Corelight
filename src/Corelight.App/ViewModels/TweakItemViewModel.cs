@@ -12,6 +12,8 @@ public abstract class TweakCardViewModel(TweakDefinition tweak) : ObservableObje
     public TweakDefinition Tweak { get; } = tweak;
     public string Title => Tweak.Title;
     public string Description => Tweak.Description;
+    public string? AvailabilityNote => Tweak.AvailabilityNote;
+    public bool HasAvailabilityNote => !string.IsNullOrWhiteSpace(AvailabilityNote);
     public string? Warning => Tweak.Warning;
     public bool HasWarning => !string.IsNullOrEmpty(Tweak.Warning);
     public TweakRisk Risk => Tweak.Risk;

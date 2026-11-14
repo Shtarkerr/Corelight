@@ -16,7 +16,7 @@ public enum TweakRisk
 {
     /// <summary>Ничего заметного для пользователя не ломает.</summary>
     Safe,
-    /// <summary>Может отключить функцию, которой кто-то пользуется. В сканировании не отмечается по умолчанию.</summary>
+    /// <summary>Может отключить функцию, которой кто-то пользуется. Последствия указаны в карточке.</summary>
     Caution,
     /// <summary>Только для тех, кто понимает последствия. Перед применением показывается предупреждение.</summary>
     Advanced,
@@ -44,12 +44,24 @@ public sealed class TweakDefinition
     /// <summary>Дополнительное предупреждение, которое показывается перед применением.</summary>
     public string? Warning { get; init; }
 
+    /// <summary>Официальная страница для ручного возврата приложения.</summary>
+    public string? RestoreHelpUrl { get; init; }
+
+    /// <summary>Как вернуть приложение, если автоматическая переустановка недоступна.</summary>
+    public string? RestoreHelpText { get; init; }
+
+    /// <summary>Ограничения доступности и возврата приложения, видимые до удаления и в истории.</summary>
+    public string? AvailabilityNote { get; init; }
+
     public TweakRisk Risk { get; init; } = TweakRisk.Safe;
 
     public TweakImpact Impact { get; init; } = TweakImpact.Low;
 
     /// <summary>Попадает ли твик в результаты сканирования.</summary>
     public bool Recommended { get; init; }
+
+    /// <summary>Галочка в результатах сканирования; null — по уровню риска. Advanced всегда выбирается вручную.</summary>
+    public bool? Preselected { get; init; }
 
     public bool RequiresReboot { get; init; }
 

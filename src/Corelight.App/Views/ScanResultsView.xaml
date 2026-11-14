@@ -19,7 +19,7 @@
         <StackPanel Grid.Row="0">
             <TextBlock Style="{StaticResource PageTitle}" Text="Результаты сканирования" />
             <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
-                       Text="Безопасные рекомендации уже отмечены. Пункты «Осторожно» отключают функции, которыми кто-то пользуется, поэтому отметьте их сами, если они вам не нужны." />
+                       Text="Проверьте отмеченные рекомендации перед применением. Пункты «Осторожно» отключают функции или удаляют приложения, которыми вы можете пользоваться. Снимите галочки с того, что хотите сохранить." />
         </StackPanel>
 
         <!-- Сканирования ещё не было -->
@@ -38,7 +38,7 @@
             <StackPanel Orientation="Horizontal">
                 <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="28" Margin="0,0,16,0" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Style="{StaticResource ItemTitle}" Text="Всё рекомендованное уже применено" />
+                    <TextBlock Style="{StaticResource ItemTitle}" Text="Доступных рекомендаций не найдено" />
                     <TextBlock Style="{StaticResource SecondaryText}" Text="Дополнительные настройки можно посмотреть в разделе «Расширенное»." />
                 </StackPanel>
             </StackPanel>
@@ -63,6 +63,8 @@
                                                 <StackPanel>
                                                     <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
                                                     <TextBlock Margin="0,2,0,0" Style="{StaticResource SecondaryText}" Text="{Binding Description}" />
+                                                    <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding AvailabilityNote}"
+                                                               Visibility="{Binding HasAvailabilityNote, Converter={StaticResource BoolToVisibility}}" />
                                                     <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding Warning}"
                                                                Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
                                                     <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TweakBadges}" />

@@ -29,7 +29,7 @@ public sealed partial class HomeViewModel(
     public string GpuText => Hardware is null ? "" : string.Join(", ", Hardware.Gpus.DefaultIfEmpty("Неизвестно"));
     public string RamText => Hardware is null ? "" : $"{Math.Round(Hardware.TotalMemoryBytes / 1024d / 1024 / 1024)} ГБ";
     public string OsText => Hardware is null ? "" : $"{Hardware.OsName} {Hardware.OsDisplayVersion} (сборка {Hardware.OsBuild}.{Hardware.OsRevision})";
-    public string FormFactorText => Hardware is null ? "" : Hardware.HasBattery ? "Ноутбук" : "Настольный ПК";
+    public string FormFactorText => Hardware is null ? "" : Hardware.HasBattery switch { true => "Ноутбук", false => "Настольный ПК", _ => "Не определён" };
 
     public string DiskText => Hardware?.SystemDisk switch
     {
@@ -59,7 +59,7 @@ public sealed partial class HomeViewModel(
         {
             using (state.BeginBusy("Сбор сведений о системе…"))
             {
-                Hardware = await state.GetHardwareAsync();
+                Hardware = await state.RefreshHardwareAsync();
                 var progress = new Progress<double>(p => state.BusyText = $"Сканирование системы… {p:P0}");
                 state.LastScan = await scanner.ScanAsync(Hardware, progress);
             }
@@ -86,7 +86,7 @@ public sealed partial class HomeViewModel(
         var applied = report.Statuses.Count(s =>
             s.Recommended && s.IsAvailable && s.State == TweakState.Applied && s.Tweak.Category != TweakCategory.Apps);
         ScanSummary = suggestions == 0
-            ? "Рекомендаций нет — всё рекомендованное уже применено."
+            ? "Доступных рекомендаций не найдено. Подробности — в разделе «Расширенное»."
             : $"Найдено рекомендаций: {suggestions}. Настроек уже в порядке: {applied}.";
     }
 }

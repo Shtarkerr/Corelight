@@ -22,7 +22,12 @@ public sealed class DialogService
         var box = new MessageBox
         {
             Title = title,
-            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 580, HorizontalAlignment = HorizontalAlignment.Left },
+            Content = new ScrollViewer
+            {
+                MaxHeight = Math.Max(160, SystemParameters.WorkArea.Height * 0.6),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 580, HorizontalAlignment = HorizontalAlignment.Left },
+            },
             PrimaryButtonAppearance = ControlAppearance.Primary,
             CloseButtonText = close,
             Owner = Application.Current.MainWindow,

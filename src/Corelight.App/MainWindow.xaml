@@ -48,7 +48,7 @@
             <!-- Навигация -->
             <DockPanel Grid.Column="0" Margin="8,4,4,12">
                 <StackPanel DockPanel.Dock="Bottom" Margin="12,0,8,0">
-                    <TextBlock Style="{StaticResource CaptionText}" Text="Без разгона · безопасно для античитов · графика не меняется" />
+                    <TextBlock Style="{StaticResource CaptionText}" Text="Без разгона · защита Windows сохраняется · графика не меняется" />
                 </StackPanel>
                 <ListBox
                     ItemsSource="{Binding Items}"

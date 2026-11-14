@@ -31,6 +31,7 @@ public sealed class AppxPackageAction : TweakAction
 
     private Task ReinstallAsync(PlatformServices p, CancellationToken ct)
     {
+        p.Apps.Refresh();
         if (p.Apps.IsInstalled(Package))
             return Task.CompletedTask;
         if (StoreId is null)

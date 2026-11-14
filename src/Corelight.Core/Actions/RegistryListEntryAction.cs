@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Text.Json;
 using Corelight.Core.Platform;
 using Corelight.Core.Tweaks;
 
@@ -25,8 +26,20 @@ public sealed class RegistryListEntryAction : TweakAction
         return Task.FromResult(applied ? ActionState.Applied : ActionState.NotApplied);
     }
 
-    public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct) =>
-        Task.FromResult(RegistryValueAction.Serialize(p.Registry.GetValue(Path, Name)));
+    public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct)
+    {
+        var value = p.Registry.GetValue(Path, Name);
+        if (value is not null && value.Kind != RegistryValueKind.String)
+            throw new InvalidOperationException($"Ожидалась строка настроек в {Path}\\{Name}.");
+        var entry = Parse(value?.Data).GetValueOrDefault(Key);
+        return Task.FromResult(entry is null ? null : JsonSerializer.Serialize(entry));
+    }
+
+    private string? OriginalEntry(string? captured) => captured is null ? null
+        : captured.StartsWith('{') ? Parse(RegistryValueAction.Deserialize(captured)?.Data).GetValueOrDefault(Key)
+        : JsonSerializer.Deserialize<string>(captured);
+
+    public override bool CapturedStateMatches(string? current, string? original) => OriginalEntry(current) == OriginalEntry(original);
 
     public override Task ApplyAsync(PlatformServices p, CancellationToken ct)
     {
@@ -38,7 +51,12 @@ public sealed class RegistryListEntryAction : TweakAction
 
     public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct)
     {
-        RegistryValueAction.Restore(p.Registry, Path, Name, RegistryValueAction.Deserialize(captured));
+        var entries = Parse(p.Registry.GetValue(Path, Name)?.Data);
+        var original = OriginalEntry(captured);
+        if (original is null) entries.Remove(Key);
+        else entries[Key] = original;
+        if (entries.Count == 0) p.Registry.DeleteValue(Path, Name);
+        else p.Registry.SetValue(Path, Name, RegValue.String(Format(entries)));
         return Task.CompletedTask;
     }
 

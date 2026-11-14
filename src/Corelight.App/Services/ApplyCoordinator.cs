@@ -38,6 +38,7 @@ public sealed class ApplyCoordinator(
         var failures = new List<string>();
         var warnings = new List<string>();
         var succeeded = 0;
+        var pending = 0;
 
         using (state.BeginBusy(""))
         {
@@ -46,23 +47,26 @@ public sealed class ApplyCoordinator(
                 var tweak = tweaks[i];
                 var verb = apply ? "Применение" : "Откат";
                 if (tweak.Category == TweakCategory.Apps)
-                    verb = apply ? "Удаление" : "Установка из Microsoft Store";
+                    verb = apply ? "Удаление" : "Возврат приложения";
                 state.BusyText = tweaks.Count == 1 ? $"{verb}: {tweak.Title}…" : $"{verb} ({i + 1} из {tweaks.Count}): {tweak.Title}…";
 
                 try
                 {
+                    var confirmed = true;
                     if (apply)
                     {
                         // Например, «Высокая производительность» перед «Максимальной»: сначала вернуть исходную схему.
                         await Task.Run(() => engine.RevertConflictsAsync(tweak, catalog.Tweaks));
                         var result = await Task.Run(() => engine.ApplyAsync(tweak));
                         warnings.AddRange(result.Warnings.Select(w => $"{tweak.Title}: {w}"));
+                        confirmed = result.Confirmed;
                     }
                     else
                     {
                         await Task.Run(() => engine.RevertAsync(tweak));
                     }
-                    succeeded++;
+                    if (confirmed) succeeded++;
+                    else pending++;
                     if (tweak.RequiresReboot)
                         state.RebootRequired = true;
                 }
@@ -75,9 +79,9 @@ public sealed class ApplyCoordinator(
             state.MarkSystemChanged();
         }
 
-        if (failures.Count > 0 || showSummary)
-            await ShowSummaryAsync(apply, succeeded, failures, warnings);
-        return failures.Count == 0;
+        if (failures.Count > 0 || pending > 0 || warnings.Count > 0 || showSummary)
+            await ShowSummaryAsync(apply, succeeded, pending, failures, warnings);
+        return failures.Count == 0 && pending == 0;
     }
 
     private async Task<bool> EnsureRestorePointAsync()
@@ -86,16 +90,17 @@ public sealed class ApplyCoordinator(
             return true;
 
         RestorePointResult result;
+        string? restoreError = null;
         using (state.BeginBusy("Создание точки восстановления Windows… Это может занять до минуты."))
             result = await restorePoints.CreateAsync("Corelight: перед оптимизацией");
 
-        if (result == RestorePointResult.ProtectionDisabled)
+        if (result is RestorePointResult.ProtectionDisabled or RestorePointResult.NotCreated)
         {
             var choice = await dialogs.ShowAsync(
-                "Защита системы выключена",
-                "Чтобы создать точку восстановления, нужно включить защиту системы для системного диска. " +
+                result == RestorePointResult.ProtectionDisabled ? "Защита системы выключена" : "Создание точки не подтверждено",
+                "Можно включить защиту системы для системного диска и повторить создание точки. " +
                 "Windows выделит под точки восстановления небольшую часть диска.\n\n" +
-                "Даже без точки восстановления каждое изменение можно будет откатить в разделе «История и откат».",
+                "Исходные настройки сохраняются в истории. Возврат удалённых приложений может потребовать интернета и ручной установки.",
                 "Включить и создать", "Продолжить без точки");
             if (choice == DialogChoice.Cancel)
                 return false;
@@ -113,6 +118,7 @@ public sealed class ApplyCoordinator(
                     {
                         log.LogError(ex, "Не удалось включить защиту системы");
                         result = RestorePointResult.Failed;
+                        restoreError = ex.Message;
                     }
                 }
             }
@@ -127,8 +133,8 @@ public sealed class ApplyCoordinator(
         {
             var proceed = await dialogs.ConfirmAsync(
                 "Точка восстановления не создана",
-                "Windows не смогла создать точку восстановления. Каждое изменение всё равно можно будет откатить " +
-                "в разделе «История и откат». Продолжить?",
+                "Windows не смогла создать точку восстановления. " + (restoreError ?? restorePoints.LastError) +
+                "\n\nИсходные настройки сохраняются в истории. Для возврата приложений могут потребоваться интернет и ручная установка. Продолжить?",
                 "Продолжить");
             if (!proceed)
                 return false;
@@ -138,10 +144,11 @@ public sealed class ApplyCoordinator(
         return true;
     }
 
-    private Task ShowSummaryAsync(bool apply, int succeeded, List<string> failures, List<string> warnings)
+    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, List<string> failures, List<string> warnings)
     {
         var text = new StringBuilder();
         text.AppendLine(apply ? $"Применено изменений: {succeeded}." : $"Откачено изменений: {succeeded}.");
+        if (pending > 0) text.AppendLine($"Результат пока не подтверждён: {pending}.");
         if (failures.Count > 0)
         {
             text.AppendLine().AppendLine("Не удалось:");
@@ -150,7 +157,7 @@ public sealed class ApplyCoordinator(
         }
         if (warnings.Count > 0)
         {
-            text.AppendLine().AppendLine("Часть второстепенных изменений Windows не разрешила (это не критично):");
+            text.AppendLine().AppendLine("Замечания:");
             foreach (var w in warnings.Take(5))
                 text.AppendLine("• " + w);
             if (warnings.Count > 5)
@@ -159,7 +166,7 @@ public sealed class ApplyCoordinator(
         if (state.RebootRequired)
             text.AppendLine().Append("Часть изменений вступит в силу после перезагрузки.");
 
-        var title = failures.Count == 0 ? "Готово" : "Готово, но с ошибками";
+        var title = failures.Count > 0 ? "Готово, но с ошибками" : pending > 0 || warnings.Count > 0 ? "Готово с замечаниями" : "Готово";
         return dialogs.ShowInfoAsync(title, text.ToString().TrimEnd());
     }
 }

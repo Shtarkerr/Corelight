@@ -6,4 +6,5 @@ public sealed record PlatformServices(
     IServiceControl Services,
     IScheduledTaskControl Tasks,
     IAppxControl Apps,
-    IPowerControl Power);
+    IPowerControl Power,
+    IOneDriveControl OneDrive);

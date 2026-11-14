@@ -64,6 +64,7 @@ public sealed partial class AdvancedViewModel(
 
     private async Task LoadAsync()
     {
+        engine.RefreshExternalState();
         var hardware = await state.GetHardwareAsync();
         var selectedTitle = SelectedSection?.Title;
         var sections = new List<AdvancedSectionViewModel>();
@@ -158,6 +159,8 @@ public sealed partial class AdvancedViewModel(
         var text = isApp ? $"Приложение «{item.Title}» будет удалено для всех пользователей этого ПК." : item.Description;
         if (item.HasWarning)
             text += "\n\n" + item.Warning;
+        if (item.HasAvailabilityNote)
+            text += "\n\n" + item.AvailabilityNote;
         return await dialogs.ConfirmAsync(isApp ? "Удалить приложение?" : item.Title, text, isApp ? "Удалить" : "Применить");
     }
 

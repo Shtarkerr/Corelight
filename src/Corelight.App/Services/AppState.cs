@@ -24,7 +24,10 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
     /// <summary>Увеличивается после каждого изменения системы, чтобы страницы знали, что пора перечитать состояние.</summary>
     public int ChangeVersion { get; private set; }
 
-    public Task<HardwareProfile> GetHardwareAsync() => _hardware ??= scanner.ProbeHardwareAsync();
+    public Task<HardwareProfile> GetHardwareAsync() =>
+        _hardware is null || _hardware.IsFaulted || _hardware.IsCanceled ? RefreshHardwareAsync() : _hardware;
+
+    public Task<HardwareProfile> RefreshHardwareAsync() => _hardware = scanner.ProbeHardwareAsync();
 
     public void MarkSystemChanged() => ChangeVersion++;
 

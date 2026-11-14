@@ -101,6 +101,9 @@ public static class GuardrailValidator
         if (tweak.Actions.Count == 0)
             errors.Add("нет действий");
 
+        if (tweak.RestoreHelpUrl is { } url && (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps))
+            errors.Add("страница ручного возврата должна использовать HTTPS");
+
         foreach (var condition in tweak.RecommendWhen.Concat(tweak.Requires))
         {
             if (!HardwareProfile.KnownConditions.Contains(condition))
@@ -128,7 +131,7 @@ public static class GuardrailValidator
                 return [$"пакет {a.Package} нельзя удалять"];
             case ScheduledTaskAction t when !t.Path.StartsWith('\\'):
                 return [$"путь задачи {t.Path} должен начинаться с \\"];
-            case ScheduledTaskAction t when ForbiddenTaskPrefixes.Any(p => t.Path.StartsWith(p, StringComparison.OrdinalIgnoreCase)):
+            case ScheduledTaskAction t when ForbiddenTaskPrefixes.Any(p => NormalizePath(t.Path).StartsWith(p, StringComparison.OrdinalIgnoreCase)):
                 return [$"задача {t.Path} под защитой"];
             case PowerPlanAction p when !AllowedPowerSchemes.Contains(p.Scheme):
                 return [$"схема питания {p.Scheme} не является штатной"];
@@ -141,6 +144,7 @@ public static class GuardrailValidator
 
     private static IEnumerable<string> ValidateRegistry(string path, Func<RegValue>? value, Func<RegValue>? defaultValue)
     {
+        path = NormalizePath(path);
         if (!path.StartsWith(@"HKLM\", StringComparison.OrdinalIgnoreCase) && !path.StartsWith(@"HKCU\", StringComparison.OrdinalIgnoreCase))
             yield return $"путь {path} должен начинаться с HKLM\\ или HKCU\\";
 
@@ -167,6 +171,12 @@ public static class GuardrailValidator
         }
         if (formatError is not null)
             yield return formatError;
+    }
+
+    private static string NormalizePath(string path)
+    {
+        var normalized = string.Join('\\', path.Split('\\', StringSplitOptions.RemoveEmptyEntries));
+        return path.StartsWith('\\') ? @"\" + normalized : normalized;
     }
 
     /// <summary>Имя службы из пути вида HKLM\SYSTEM\&lt;ControlSet&gt;\Services\&lt;имя&gt;\...</summary>

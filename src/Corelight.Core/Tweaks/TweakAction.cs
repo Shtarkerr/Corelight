@@ -22,6 +22,7 @@ public enum ActionState
 [JsonDerivedType(typeof(ServiceStartupAction), "service")]
 [JsonDerivedType(typeof(ScheduledTaskAction), "task")]
 [JsonDerivedType(typeof(AppxPackageAction), "appx")]
+[JsonDerivedType(typeof(OneDriveAction), "oneDrive")]
 [JsonDerivedType(typeof(PowerPlanAction), "powerPlan")]
 [JsonDerivedType(typeof(TcpNoDelayAction), "tcpNoDelay")]
 public abstract class TweakAction
@@ -33,6 +34,9 @@ public abstract class TweakAction
 
     /// <summary>Снимок текущего состояния для бэкапа.</summary>
     public abstract Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct);
+
+    /// <summary>Сравнивает снимки, в том числе совместимые форматы ранних версий.</summary>
+    public virtual bool CapturedStateMatches(string? current, string? original) => current == original;
 
     public abstract Task ApplyAsync(PlatformServices p, CancellationToken ct);
 

@@ -43,7 +43,7 @@ public sealed class WindowsIntegrationTests : IDisposable
     public async Task Engine_applies_and_reverts_on_real_registry()
     {
         _registry.SetValue(Key, "Existing", RegValue.String("Medium"));
-        var platform = new PlatformServices(_registry, null!, null!, null!, null!);
+        var platform = new PlatformServices(_registry, new FakeServices(), new FakeTasks(), new FakeApps(), new FakePower(), new FakeOneDrive());
         var engine = new TweakEngine(platform, new MemoryBackupStore(), NullLogger<TweakEngine>.Instance);
         var tweak = TestSystem.Tweak(
             new RegistryValueAction { Path = Key, Name = "New", Value = "0" },
@@ -110,5 +110,5 @@ public sealed class WindowsIntegrationTests : IDisposable
         Assert.True(profile.TotalMemoryBytes > 0);
     }
 
-    public void Dispose() => Registry.CurrentUser.DeleteSubKeyTree(@"Software\Corelight.Tests", throwOnMissingSubKey: false);
+    public void Dispose() => Registry.CurrentUser.DeleteSubKeyTree(_subKey, throwOnMissingSubKey: false);
 }

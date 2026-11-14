@@ -13,8 +13,9 @@ public sealed record TweakStatus(TweakDefinition Tweak, TweakState State, string
     /// <summary>Что попадает в результаты сканирования: рекомендовано и ещё не применено.</summary>
     public bool IsSuggestion => IsAvailable && Recommended && State == TweakState.NotApplied;
 
-    /// <summary>Галочка по умолчанию стоит только у безопасных рекомендаций.</summary>
-    public bool IsPreselected => IsSuggestion && Tweak.Risk == TweakRisk.Safe;
+    /// <summary>Выбор каталога имеет приоритет над уровнем риска; Advanced всегда выбирается вручную.</summary>
+    public bool IsPreselected => IsSuggestion && Tweak.Risk != TweakRisk.Advanced
+        && (Tweak.Preselected ?? Tweak.Risk == TweakRisk.Safe);
 }
 
 public sealed record ScanReport(HardwareProfile Hardware, IReadOnlyList<TweakStatus> Statuses)
@@ -39,6 +40,7 @@ public sealed class Scanner(TweakCatalog catalog, TweakEngine engine, HardwarePr
 
     public async Task<ScanReport> ScanAsync(HardwareProfile hardware, IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        engine.RefreshExternalState();
         var statuses = new List<TweakStatus>(catalog.Tweaks.Count);
         for (var i = 0; i < catalog.Tweaks.Count; i++)
         {

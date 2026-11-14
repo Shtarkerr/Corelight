@@ -194,6 +194,7 @@ public class TweakEngineTests
     {
         var sys = new TestSystem();
         sys.Apps.Installed.Add("Clipchamp.Clipchamp");
+        sys.Apps.StorePackages["9P1J8S7CCWWT"] = "Clipchamp.Clipchamp";
         var engine = sys.CreateEngine();
         var tweak = TestSystem.Tweak(new AppxPackageAction { Package = "Clipchamp.Clipchamp", StoreId = "9P1J8S7CCWWT" });
 

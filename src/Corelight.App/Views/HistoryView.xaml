@@ -20,6 +20,8 @@
             <TextBlock Style="{StaticResource PageTitle}" Text="История и откат" />
             <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
                        Text="Здесь все изменения, сделанные программой. Откат возвращает именно те значения, которые были до оптимизации." />
+            <TextBlock Margin="0,0,0,12" Style="{StaticResource SecondaryText}" Text="{Binding SummaryText}"
+                       Visibility="{Binding HasItems, Converter={StaticResource BoolToVisibility}}" />
         </StackPanel>
 
         <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,0,12">
@@ -27,11 +29,11 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:Button Content="Восстановление системы" Icon="{ui:SymbolIcon History24}"
                                Command="{Binding OpenSystemRestoreCommand}" Margin="0,0,8,0" />
-                    <ui:Button Content="Откатить всё" Appearance="Danger" Icon="{ui:SymbolIcon ArrowUndo24}"
+                    <ui:Button Content="Откатить доступное" Appearance="Danger" Icon="{ui:SymbolIcon ArrowUndo24}"
                                Command="{Binding RevertAllCommand}" />
                 </StackPanel>
                 <TextBlock Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,16,0"
-                           Text="Если что-то пошло совсем не так, можно вернуть систему целиком через точку восстановления Windows, созданную перед оптимизацией." />
+                           Text="Для дополнительного восстановления можно использовать заранее созданную точку восстановления Windows, если она есть." />
             </DockPanel>
         </Border>
 
@@ -44,9 +46,17 @@
                     <DataTemplate DataType="{x:Type vm:HistoryItemViewModel}">
                         <Border Style="{StaticResource Card}" Margin="0,0,0,6">
                             <DockPanel>
-                                <ui:Button DockPanel.Dock="Right" VerticalAlignment="Center" Content="Откатить"
+                                <ui:Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Content="Как вернуть"
+                                           Visibility="{Binding HasRestoreHelp, Converter={StaticResource BoolToVisibility}}"
+                                           Command="{Binding DataContext.ShowRestoreHelpCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                           CommandParameter="{Binding}" />
+                                <ui:Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" Content="Открыть в Store"
+                                           Visibility="{Binding CanOpenStore, Converter={StaticResource BoolToVisibility}}"
+                                           Command="{Binding DataContext.OpenStoreCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                           CommandParameter="{Binding}" />
+                                <ui:Button DockPanel.Dock="Right" VerticalAlignment="Center" Content="{Binding RevertButtonText}"
                                            Icon="{ui:SymbolIcon ArrowUndo24}"
-                                           IsEnabled="{Binding CanRevert}"
+                                           IsEnabled="{Binding CanInteract}"
                                            Command="{Binding DataContext.RevertCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                            CommandParameter="{Binding}" />
                                 <StackPanel>
@@ -56,6 +66,8 @@
                                         <Run Text="·" />
                                         <Run Text="{Binding AppliedAtText, Mode=OneWay}" />
                                     </TextBlock>
+                                    <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding AvailabilityNote}"
+                                               Visibility="{Binding HasAvailabilityNote, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
                             </DockPanel>
                         </Border>

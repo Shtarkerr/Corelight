@@ -75,6 +75,9 @@ internal sealed class FakeApps : IAppxControl
 {
     public HashSet<string> Installed { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> StoreInstalls { get; } = [];
+    public Dictionary<string, string> StorePackages { get; } = [];
+
+    public void Refresh() { }
 
     public bool IsInstalled(string packageName) => Installed.Contains(packageName);
 
@@ -87,6 +90,7 @@ internal sealed class FakeApps : IAppxControl
     public Task InstallFromStoreAsync(string storeId, CancellationToken ct = default)
     {
         StoreInstalls.Add(storeId);
+        if (StorePackages.TryGetValue(storeId, out var package)) Installed.Add(package);
         return Task.CompletedTask;
     }
 }
@@ -115,6 +119,14 @@ internal sealed class FakePower : IPowerControl
     }
 }
 
+internal sealed class FakeOneDrive : IOneDriveControl
+{
+    public OneDriveScope Scope { get; set; }
+    public OneDriveScope GetInstalledScope() => Scope;
+    public Task UninstallAsync(CancellationToken ct = default) { Scope = OneDriveScope.None; return Task.CompletedTask; }
+    public Task RestoreAsync(OneDriveScope scope, CancellationToken ct = default) { Scope = scope; return Task.CompletedTask; }
+}
+
 internal sealed class MemoryBackupStore : IBackupStore
 {
     private readonly Dictionary<string, BackupRecord> _records = [];
@@ -136,9 +148,10 @@ internal sealed class TestSystem
     public FakeTasks Tasks { get; } = new();
     public FakeApps Apps { get; } = new();
     public FakePower Power { get; } = new();
+    public FakeOneDrive OneDrive { get; } = new();
     public MemoryBackupStore Backups { get; } = new();
 
-    public PlatformServices Platform => new(Registry, Services, Tasks, Apps, Power);
+    public PlatformServices Platform => new(Registry, Services, Tasks, Apps, Power, OneDrive);
 
     public TweakEngine CreateEngine() => new(Platform, Backups, NullLogger<TweakEngine>.Instance);
 

@@ -22,9 +22,9 @@ public sealed record HardwareProfile
     public string OsDisplayVersion { get; init; } = "";
     public int OsBuild { get; init; }
     public int OsRevision { get; init; }
-    public bool HasBattery { get; init; }
-    public bool HasPrinter { get; init; }
-    public bool HasBluetooth { get; init; }
+    public bool? HasBattery { get; init; }
+    public bool? HasPrinter { get; init; }
+    public bool? HasBluetooth { get; init; }
     public DiskKind SystemDisk { get; init; }
 
     /// <summary>null — определить не удалось.</summary>
@@ -32,10 +32,10 @@ public sealed record HardwareProfile
 
     public bool Satisfies(string condition) => condition switch
     {
-        "desktop" => !HasBattery,
-        "laptop" => HasBattery,
-        "noPrinter" => !HasPrinter,
-        "noBluetooth" => !HasBluetooth,
+        "desktop" => HasBattery == false,
+        "laptop" => HasBattery == true,
+        "noPrinter" => HasPrinter == false,
+        "noBluetooth" => HasBluetooth == false,
         "ssd" => SystemDisk == DiskKind.Ssd,
         "hdd" => SystemDisk == DiskKind.Hdd,
         "hagsSupported" => HagsSupported == true,

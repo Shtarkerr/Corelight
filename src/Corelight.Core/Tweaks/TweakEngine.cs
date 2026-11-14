@@ -15,10 +15,11 @@ public enum TweakState
 public sealed class TweakException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <param name="Warnings">Ошибки необязательных действий, которые не помешали применить твик.</param>
-public sealed record TweakResult(IReadOnlyList<string> Warnings);
+public sealed record TweakResult(IReadOnlyList<string> Warnings, bool Confirmed = true);
 
 public sealed class TweakEngine(PlatformServices platform, IBackupStore backups, ILogger<TweakEngine> log)
 {
+    public void RefreshExternalState() => platform.Apps.Refresh();
     public IBackupStore Backups => backups;
 
     public async Task<TweakState> DetectAsync(TweakDefinition tweak, CancellationToken ct = default)
@@ -63,35 +64,42 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
 
     public async Task<TweakResult> ApplyAsync(TweakDefinition tweak, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        RefreshExternalState();
         log.LogInformation("Применение твика {Tweak}", tweak.Id);
 
         // Если твик уже применялся, сохраняем самый первый бэкап: в нём настоящее исходное состояние.
         var record = backups.Get(tweak.Id);
         var createdRecord = false;
-        if (record is null || record.Actions.Count != tweak.Actions.Count)
+        if (record is not null) EnsureCompatibleBackup(tweak, record);
+        if (record is null)
         {
             record = await CaptureAsync(tweak, ct);
             backups.Save(record);
             createdRecord = true;
         }
 
-        var applied = new List<int>();
+        var attempted = new List<int>();
+        var optionalFailures = new HashSet<int>();
         var warnings = new List<string>();
         try
         {
             for (var i = 0; i < tweak.Actions.Count; i++)
             {
                 var action = tweak.Actions[i];
-                if (await SafeDetectAsync(action, ct) != ActionState.NotApplied)
+                if (!record.Actions[i].Applicable) continue;
+                if (await action.DetectAsync(platform, ct) != ActionState.NotApplied)
                     continue;
 
                 try
                 {
+                    // Действие может успеть изменить систему перед исключением.
+                    attempted.Add(i);
                     await action.ApplyAsync(platform, ct);
-                    applied.Add(i);
                 }
                 catch (Exception ex) when (action.Optional && ex is not OperationCanceledException)
                 {
+                    optionalFailures.Add(i);
                     log.LogWarning(ex, "Необязательное действие {Action} твика {Tweak} не выполнено", action.Describe(), tweak.Id);
                     warnings.Add($"{action.Describe()}: {ex.Message}");
                 }
@@ -100,35 +108,54 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         catch (Exception ex)
         {
             log.LogError(ex, "Ошибка применения твика {Tweak}, откатываем выполненные действия", tweak.Id);
-            for (var j = applied.Count - 1; j >= 0; j--)
+            var rollbackErrors = new List<string>();
+            for (var j = attempted.Count - 1; j >= 0; j--)
             {
-                var i = applied[j];
+                var i = attempted[j];
                 try
                 {
+                    // Например, отказ в доступе мог произойти до изменения цели.
+                    if (await MatchesBackupAsync(tweak.Actions[i], record.Actions[i].State, CancellationToken.None))
+                        continue;
                     await tweak.Actions[i].RevertAsync(platform, record.Actions[i].State, CancellationToken.None);
+                    if (!await MatchesBackupAsync(tweak.Actions[i], record.Actions[i].State, CancellationToken.None))
+                        throw new InvalidOperationException($"Возврат {tweak.Actions[i].Describe()} пока не подтверждён.");
                 }
                 catch (Exception rollbackEx)
                 {
                     log.LogError(rollbackEx, "Не удалось откатить {Action}", tweak.Actions[i].Describe());
+                    rollbackErrors.Add($"{tweak.Actions[i].Describe()}: {rollbackEx.Message}");
                 }
             }
-            if (createdRecord)
+            if (createdRecord && rollbackErrors.Count == 0)
                 backups.Remove(tweak.Id);
 
             if (ex is OperationCanceledException)
                 throw;
-            throw new TweakException($"Не удалось применить «{tweak.Title}»: {ex.Message}", ex);
+            var rollbackMessage = rollbackErrors.Count == 0 ? "" :
+                $" Не удалось полностью вернуть исходное состояние; бэкап сохранён. Повторите откат в разделе «История и откат». {string.Join(" ", rollbackErrors)}";
+            throw new TweakException($"Не удалось применить «{tweak.Title}»: {ex.Message}{rollbackMessage}", ex);
         }
 
-        return new TweakResult(warnings);
+        var confirmed = true;
+        foreach (var i in attempted)
+        {
+            if (optionalFailures.Contains(i)) continue;
+            if (await SafeDetectAsync(tweak.Actions[i], ct) == ActionState.Applied) continue;
+            warnings.Add($"Результат для «{tweak.Actions[i].Describe()}» пока не подтверждён. Бэкап сохранён; проверьте состояние после перезагрузки.");
+            if (!tweak.Actions[i].Optional) confirmed = false;
+        }
+        return new TweakResult(warnings, confirmed);
     }
 
     public async Task RevertAsync(TweakDefinition tweak, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        RefreshExternalState();
         log.LogInformation("Откат твика {Tweak}", tweak.Id);
 
         var record = backups.Get(tweak.Id);
-        var usable = record is not null && record.Actions.Count == tweak.Actions.Count;
+        if (record is not null) EnsureCompatibleBackup(tweak, record);
         var errors = new List<string>();
 
         for (var i = tweak.Actions.Count - 1; i >= 0; i--)
@@ -136,16 +163,23 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             var action = tweak.Actions[i];
             try
             {
-                if (usable && record!.Actions[i].Applicable)
-                    await action.RevertAsync(platform, record.Actions[i].State, ct);
+                ct.ThrowIfCancellationRequested();
+                if (record is not null)
+                {
+                    if (!record.Actions[i].Applicable) continue;
+                    if (!await MatchesBackupAsync(action, record.Actions[i].State, ct))
+                        await action.RevertAsync(platform, record.Actions[i].State, ct);
+                    if (!await MatchesBackupAsync(action, record.Actions[i].State, ct))
+                        throw new InvalidOperationException($"Возврат {action.Describe()} пока не подтверждён. Исходный бэкап сохранён.");
+                }
                 else if (await SafeDetectAsync(action, ct) == ActionState.Applied)
                     await action.RevertToDefaultAsync(platform, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 log.LogError(ex, "Не удалось откатить {Action} твика {Tweak}", action.Describe(), tweak.Id);
-                if (!action.Optional)
-                    errors.Add(ex.Message);
+                // Необязательность допускает пропуск применения, но не потерю данных для отката.
+                errors.Add(ex.Message);
             }
         }
 
@@ -156,16 +190,63 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             backups.Remove(tweak.Id);
     }
 
+    /// <summary>Подтверждает ручной возврат приложения по бэкапу. Ничего не устанавливает и не удаляет.</summary>
+    public async Task<bool> TryConfirmManualAppRestoreAsync(TweakDefinition tweak, CancellationToken ct = default)
+    {
+        var record = backups.Get(tweak.Id);
+        if (record is null || record.Actions.Count != tweak.Actions.Count || tweak.Actions.Count == 0
+            || tweak.Actions.Any(a => a is not Corelight.Core.Actions.AppxPackageAction))
+            return false;
+
+        EnsureCompatibleBackup(tweak, record);
+
+        platform.Apps.Refresh();
+        for (var i = 0; i < tweak.Actions.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!record.Actions[i].Applicable) continue;
+            if (!await MatchesBackupAsync(tweak.Actions[i], record.Actions[i].State, ct))
+                return false;
+        }
+
+        backups.Remove(tweak.Id);
+        log.LogInformation("Ручной возврат приложения {Tweak} подтверждён", tweak.Id);
+        return true;
+    }
+
+    private async Task<bool> MatchesBackupAsync(TweakAction action, string? captured, CancellationToken ct)
+    {
+        try
+        {
+            return action.CapturedStateMatches(await action.CaptureAsync(platform, ct), captured);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Ошибка чтения не должна мешать попытке восстановить сохранённое состояние.
+            log.LogWarning(ex, "Не удалось сравнить состояние {Action} с бэкапом, выполняем откат", action.Describe());
+            return false;
+        }
+    }
+
     private async Task<BackupRecord> CaptureAsync(TweakDefinition tweak, CancellationToken ct)
     {
         var actions = new List<ActionBackup>();
         foreach (var action in tweak.Actions)
         {
-            actions.Add(await SafeDetectAsync(action, ct) == ActionState.NotApplicable
+            ct.ThrowIfCancellationRequested();
+            actions.Add(await action.DetectAsync(platform, ct) == ActionState.NotApplicable
                 ? new ActionBackup(false, null)
                 : new ActionBackup(true, await action.CaptureAsync(platform, ct)));
         }
-        return new BackupRecord { TweakId = tweak.Id, Title = tweak.Title, AppliedAt = DateTimeOffset.Now, Actions = actions };
+        return new BackupRecord { TweakId = tweak.Id, Title = tweak.Title, AppliedAt = DateTimeOffset.Now, Actions = actions, ActionTargets = Targets(tweak) };
+    }
+
+    private static string[] Targets(TweakDefinition tweak) => tweak.Actions.Select(a => $"{a.GetType().Name}:{a.Describe()}").ToArray();
+
+    private static void EnsureCompatibleBackup(TweakDefinition tweak, BackupRecord record)
+    {
+        if (record.Actions.Count != tweak.Actions.Count || (record.ActionTargets is not null && !record.ActionTargets.SequenceEqual(Targets(tweak))))
+            throw new TweakException($"Состав настройки «{tweak.Title}» изменился с момента сохранения бэкапа. Автоматическое изменение остановлено, исходный бэкап сохранён. Используйте прежнюю версию программы для отката.");
     }
 
     private async Task<ActionState> SafeDetectAsync(TweakAction action, CancellationToken ct)

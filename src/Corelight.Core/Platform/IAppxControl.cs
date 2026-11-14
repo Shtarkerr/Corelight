@@ -5,6 +5,9 @@ namespace Corelight.Core.Platform;
 
 public interface IAppxControl
 {
+    /// <summary>Обновляет сведения о пакетах после установки вне Corelight.</summary>
+    void Refresh();
+
     /// <summary>Установлен ли пакет у текущего пользователя или подготовлен (provisioned) для новых пользователей.</summary>
     bool IsInstalled(string packageName);
 
@@ -20,6 +23,8 @@ public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsApp
     private readonly PackageManager _pm = new();
     private readonly Lock _gate = new();
     private HashSet<string>? _installed;
+
+    public void Refresh() => Invalidate();
 
     public bool IsInstalled(string packageName)
     {
@@ -74,8 +79,18 @@ public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsApp
                  "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
                 TimeSpan.FromMinutes(15), ct);
             if (!result.Succeeded)
+            {
+                log.LogWarning("Установка приложения Store {StoreId}: winget вернул {Code} (0x{HexCode}). Вывод: {Output}. Ошибки: {Error}",
+                    storeId, result.ExitCode, unchecked((uint)result.ExitCode).ToString("X8"), result.Output, result.Error);
+                var message = result.ExitCode switch
+                {
+                    unchecked((int)0x8A150014) => "Приложение не найдено для автоматической установки. Возможны ограничения региона Windows или Microsoft Store; одного VPN может быть недостаточно. Откройте страницу кнопкой «Открыть в Store», попробуйте ручную установку и повторите откат.",
+                    unchecked((int)0x8A150010) => "В каталоге winget нет подходящего установщика. Попробуйте установку кнопкой «Открыть в Store», затем повторите откат.",
+                    _ => $"Microsoft Store не смог установить приложение (код 0x{unchecked((uint)result.ExitCode):X8}). Подробности сохранены в журнале. Можно попробовать установку кнопкой «Открыть в Store»."
+                };
                 throw new InvalidOperationException(
-                    $"winget не смог установить приложение (код {result.ExitCode}). Попробуйте установить его вручную из Microsoft Store.");
+                    message);
+            }
         }
         finally
         {
