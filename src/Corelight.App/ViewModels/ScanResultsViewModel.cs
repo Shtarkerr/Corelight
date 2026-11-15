@@ -5,10 +5,11 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Corelight.App.Services;
 using Corelight.Core.Scanning;
+using Corelight.Core.Tweaks;
 
 namespace Corelight.App.ViewModels;
 
-public sealed record ScanGroupViewModel(CategoryInfo Info, IReadOnlyList<ScanItemViewModel> Items);
+public sealed record ScanGroupViewModel(string Title, IReadOnlyList<ScanItemViewModel> Items);
 
 public sealed partial class ScanResultsViewModel(
     AppState state,
@@ -103,17 +104,18 @@ public sealed partial class ScanResultsViewModel(
         _renderedVersion = state.ChangeVersion;
         if (report is not null)
         {
-            foreach (var info in CategoryInfo.All.Where(c => c.Category is not null))
+            foreach (var group in report.Suggestions.GroupBy(s => s.Tweak.Impact))
             {
-                var items = report.Suggestions
-                    .Where(s => s.Tweak.Category == info.Category)
-                    .Select(s => new ScanItemViewModel(s))
-                    .ToList();
-                if (items.Count == 0)
-                    continue;
+                var items = group.Select(s => new ScanItemViewModel(s)).ToList();
                 foreach (var item in items)
                     item.PropertyChanged += OnItemChanged;
-                Groups.Add(new ScanGroupViewModel(info, items));
+                var title = group.Key switch
+                {
+                    TweakImpact.High => "Высокий предполагаемый эффект",
+                    TweakImpact.Medium => "Средний предполагаемый эффект",
+                    _ => "Остальные рекомендации",
+                };
+                Groups.Add(new ScanGroupViewModel(title, items));
             }
         }
         UpdateCounts();

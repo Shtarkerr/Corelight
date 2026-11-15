@@ -49,10 +49,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="{x:Type vm:ScanGroupViewModel}">
                         <StackPanel Margin="0,0,0,16">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <ui:SymbolIcon Symbol="{Binding Info.Icon}" FontSize="20" Margin="0,0,10,0" />
-                                <TextBlock Style="{StaticResource SectionTitle}" Text="{Binding Info.Title}" />
-                            </StackPanel>
+                            <TextBlock Margin="0,0,0,8" Style="{StaticResource SectionTitle}" Text="{Binding Title}" />
                             <ItemsControl ItemsSource="{Binding Items}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type vm:ScanItemViewModel}">
@@ -62,6 +59,7 @@
                                                           IsChecked="{Binding IsSelected}" />
                                                 <StackPanel>
                                                     <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
+                                                    <TextBlock Margin="0,2,0,0" Style="{StaticResource CaptionText}" Text="{Binding CategoryText}" />
                                                     <TextBlock Margin="0,2,0,0" Style="{StaticResource SecondaryText}" Text="{Binding Description}" />
                                                     <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding AvailabilityNote}"
                                                                Visibility="{Binding HasAvailabilityNote, Converter={StaticResource BoolToVisibility}}" />

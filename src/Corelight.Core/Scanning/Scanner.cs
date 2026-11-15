@@ -20,7 +20,7 @@ public sealed record TweakStatus(TweakDefinition Tweak, TweakState State, string
 
 public sealed record ScanReport(HardwareProfile Hardware, IReadOnlyList<TweakStatus> Statuses)
 {
-    public IEnumerable<TweakStatus> Suggestions => Statuses.Where(s => s.IsSuggestion);
+    public IEnumerable<TweakStatus> Suggestions => Statuses.Where(s => s.IsSuggestion).OrderByDescending(s => s.Tweak.Impact);
 }
 
 public sealed class Scanner(TweakCatalog catalog, TweakEngine engine, HardwareProbe probe)

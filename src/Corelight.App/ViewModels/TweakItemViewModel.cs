@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Corelight.Core.Actions;
 using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
+using Corelight.App.Services;
 
 namespace Corelight.App.ViewModels;
 
@@ -18,6 +19,9 @@ public abstract class TweakCardViewModel(TweakDefinition tweak) : ObservableObje
     public bool HasWarning => !string.IsNullOrEmpty(Tweak.Warning);
     public TweakRisk Risk => Tweak.Risk;
     public bool RequiresReboot => Tweak.RequiresReboot;
+    public TweakImpact Impact => Tweak.Impact;
+    public bool HasNotableImpact => Impact is TweakImpact.High or TweakImpact.Medium;
+    public string CategoryText => CategoryInfo.For(Tweak.Category).Title;
 
     public string RiskText => Tweak.Risk switch
     {

@@ -8,10 +8,15 @@ namespace Corelight.Tests;
 internal sealed class FakeRegistry : IRegistryAccess
 {
     public Dictionary<(string Key, string Name), RegValue> Values { get; } = new(new KeyComparer());
+    public bool DenyWrites { get; set; }
 
     public RegValue? GetValue(string keyPath, string name) => Values.GetValueOrDefault((keyPath, name));
 
-    public void SetValue(string keyPath, string name, RegValue value) => Values[(keyPath, name)] = value;
+    public void SetValue(string keyPath, string name, RegValue value)
+    {
+        if (DenyWrites) throw new UnauthorizedAccessException("Attempted to perform an unauthorized operation.");
+        Values[(keyPath, name)] = value;
+    }
 
     public void DeleteValue(string keyPath, string name) => Values.Remove((keyPath, name));
 

@@ -56,6 +56,8 @@ public partial class App : Application
             .CreateLogger();
 
         DispatcherUnhandledException += OnUnhandledException;
+        Log.Information("Запуск Corelight {Version}; Windows {Windows}; x64: {Is64Bit}",
+            typeof(App).Assembly.GetName().Version, Environment.OSVersion.Version, Environment.Is64BitOperatingSystem);
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Error(args.Exception, "Необработанное исключение в фоновой задаче");
 
         _services = BuildServices();

@@ -87,6 +87,17 @@
         </Style.Triggers>
     </Style>
 
+    <Style x:Key="ImpactBadge" TargetType="Border" BasedOn="{StaticResource Badge}">
+        <Setter Property="Background" Value="#203B82F6" />
+        <Setter Property="TextElement.Foreground" Value="#93C5FD" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Impact}" Value="{x:Static tweaks:TweakImpact.High}">
+                <Setter Property="Background" Value="#208B5CF6" />
+                <Setter Property="TextElement.Foreground" Value="#C4B5FD" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- Пункт бокового меню: лёгкая подсветка и акцентная полоска слева вместо сплошной заливки. -->
     <Style x:Key="NavItem" TargetType="ListBoxItem">
         <Setter Property="Margin" Value="0,2" />
@@ -153,8 +164,9 @@
             <Border Style="{StaticResource RiskBadge}">
                 <TextBlock FontSize="11" Text="{Binding RiskText}" />
             </Border>
-            <Border Style="{StaticResource Badge}">
-                <TextBlock Style="{StaticResource BadgeText}" Text="{Binding ImpactText}" />
+            <Border Style="{StaticResource ImpactBadge}" Visibility="{Binding HasNotableImpact, Converter={StaticResource BoolToVisibility}}"
+                    ToolTip="Предполагаемое влияние на фоновую нагрузку. Прирост FPS не измерен.">
+                <TextBlock FontSize="11" Text="{Binding ImpactText}" />
             </Border>
             <Border Style="{StaticResource Badge}" Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}">
                 <TextBlock Style="{StaticResource BadgeText}" Text="Нужна перезагрузка" />

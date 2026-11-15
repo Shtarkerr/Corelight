@@ -29,7 +29,14 @@ public sealed class RegistryValueAction : TweakAction
 
     public override Task ApplyAsync(PlatformServices p, CancellationToken ct)
     {
-        p.Registry.SetValue(Path, Name, Target);
+        try
+        {
+            p.Registry.SetValue(Path, Name, Target);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new UnauthorizedAccessException($"Windows запретила изменение «{Describe()}». Настройка может быть защищена системой или политикой организации. Наличие прав администратора не гарантирует доступ к ней.", ex);
+        }
         return Task.CompletedTask;
     }
 

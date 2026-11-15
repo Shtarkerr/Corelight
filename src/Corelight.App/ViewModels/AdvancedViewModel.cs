@@ -88,7 +88,7 @@ public sealed partial class AdvancedViewModel(
                     items.Add(item);
                 }
                 // Недоступные на этом ПК пункты — в конец списка.
-                foreach (var item in items.OrderBy(i => !i.IsAvailable))
+                foreach (var item in items.OrderBy(i => !i.IsAvailable).ThenByDescending(i => i.Impact))
                     section.Items.Add(item);
             }
             else

@@ -93,6 +93,7 @@ public sealed class RestorePointService
             changed = true;
             var before = _access.LatestSequenceNumber();
             var code = _access.Create(description);
+            _log.LogInformation("SystemRestore.CreateRestorePoint: код 0x{Code:X8}, предыдущая точка {Sequence}", code, before);
             if (code is 1058u or 0x80070422u) return RestorePointResult.ProtectionDisabled;
             if (code != 0)
             {
@@ -103,7 +104,12 @@ public sealed class RestorePointService
             for (var attempt = 0; attempt < 5; attempt++)
             {
                 ct.ThrowIfCancellationRequested();
-                if (_access.LatestSequenceNumber() > before) return RestorePointResult.Created;
+                var latest = _access.LatestSequenceNumber();
+                if (latest > before)
+                {
+                    _log.LogInformation("Создание точки восстановления подтверждено: {Sequence}", latest);
+                    return RestorePointResult.Created;
+                }
                 Thread.Sleep(200);
             }
             LastError = "Windows завершила запрос, но новая точка восстановления не появилась. Возможно, защита системы ещё не включена.";
