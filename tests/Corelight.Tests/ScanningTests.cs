@@ -2,6 +2,8 @@ using Corelight.Core.Catalog;
 using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
 using Corelight.Core.SystemInfo;
+using Corelight.Core.Actions;
+using Corelight.Core.Platform;
 
 namespace Corelight.Tests;
 
@@ -26,6 +28,7 @@ public class ScanningTests
     public async Task Widgets_policy_denial_is_explained_and_already_disabled_policy_is_not_written(bool alreadyDisabled)
     {
         var sys = new TestSystem();
+        sys.Apps.Installed.Add("MicrosoftWindows.Client.WebExperience");
         const string path = @"HKLM\SOFTWARE\Policies\Microsoft\Dsh";
         sys.Registry.SetValue(path, "AllowNewsAndInterests", Corelight.Core.Platform.RegValue.DWord(alreadyDisabled ? 0u : 1u));
         sys.Registry.DenyWrites = true;
@@ -46,6 +49,82 @@ public class ScanningTests
             Assert.Null(sys.Backups.Get(tweak.Id));
             Assert.False(new TweakStatus(tweak, TweakState.NotApplied, null, true).IsPreselected);
         }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0u)]
+    [InlineData(1u)]
+    public async Task Removed_widgets_are_not_suggested_and_their_policy_is_not_written(uint? policy)
+    {
+        var sys = new TestSystem();
+        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
+        var action = Assert.IsType<RegistryValueAction>(Assert.Single(tweak.Actions));
+        if (policy is not null) sys.Registry.SetValue(action.Path, action.Name, RegValue.DWord(policy.Value));
+        var original = sys.Registry.GetValue(action.Path, action.Name);
+        sys.Registry.DenyWrites = true;
+
+        var state = await sys.CreateEngine().DetectAsync(tweak);
+        Assert.Equal(TweakState.NotApplicable, state);
+        Assert.False(new TweakStatus(tweak, state, null, true).IsSuggestion);
+        await action.ApplyAsync(sys.Platform, default);
+        await sys.CreateEngine().ApplyAsync(tweak);
+        Assert.Equal(original, sys.Registry.GetValue(action.Path, action.Name));
+    }
+
+    [Theory]
+    [InlineData(null, TweakState.NotApplied)]
+    [InlineData(0u, TweakState.Applied)]
+    [InlineData(1u, TweakState.NotApplied)]
+    public async Task Installed_widgets_use_the_policy_even_when_the_taskbar_button_is_hidden(uint? policy, TweakState expected)
+    {
+        var sys = new TestSystem();
+        sys.Apps.Installed.Add("MicrosoftWindows.Client.WebExperience");
+        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
+        var action = Assert.IsType<RegistryValueAction>(Assert.Single(tweak.Actions));
+        if (policy is not null) sys.Registry.SetValue(action.Path, action.Name, RegValue.DWord(policy.Value));
+        sys.Registry.SetValue(@"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarDa", RegValue.DWord(0));
+
+        var state = await sys.CreateEngine().DetectAsync(tweak);
+        Assert.Equal(expected, state);
+        Assert.Equal(expected == TweakState.NotApplied, new TweakStatus(tweak, state, null, true).IsSuggestion);
+    }
+
+    [Fact]
+    public async Task Widgets_removed_after_scanning_are_not_changed_on_apply()
+    {
+        var sys = new TestSystem();
+        sys.Apps.Installed.Add("MicrosoftWindows.Client.WebExperience");
+        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
+        var engine = sys.CreateEngine();
+        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
+        sys.Apps.Installed.Clear();
+        sys.Registry.DenyWrites = true;
+
+        await engine.ApplyAsync(tweak);
+
+        Assert.Empty(sys.Registry.Values);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Widgets_backup_from_previous_catalog_can_be_restored_after_component_removal(bool hadPolicy)
+    {
+        var sys = new TestSystem();
+        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
+        var current = Assert.IsType<RegistryValueAction>(Assert.Single(tweak.Actions));
+        var legacy = TestSystem.Tweak(new RegistryValueAction { Path = current.Path, Name = current.Name, Value = current.Value });
+        if (hadPolicy) sys.Registry.SetValue(current.Path, current.Name, RegValue.DWord(1));
+        var original = sys.Registry.GetValue(current.Path, current.Name);
+        var engine = sys.CreateEngine();
+        await engine.ApplyAsync(legacy);
+
+        // Старый каталог не проверял пакет. Идентификатор цели и формат снимка прежние.
+        await engine.RevertAsync(new TweakDefinition { Id = legacy.Id, Title = tweak.Title, Description = tweak.Description, Actions = tweak.Actions });
+
+        Assert.Equal(original, sys.Registry.GetValue(current.Path, current.Name));
+        Assert.Empty(sys.Backups.GetAll());
     }
 
     [Theory]

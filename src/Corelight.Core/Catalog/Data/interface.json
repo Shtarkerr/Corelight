@@ -13,7 +13,7 @@
       "impact": "Medium",
       "requiresReboot": true,
       "actions": [
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Dsh", "name": "AllowNewsAndInterests", "value": "0" }
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Dsh", "name": "AllowNewsAndInterests", "value": "0", "requiredPackage": "MicrosoftWindows.Client.WebExperience" }
       ]
     },
     {

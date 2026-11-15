@@ -19,16 +19,26 @@ public sealed class RegistryValueAction : TweakAction
     /// <summary>Значение Windows по умолчанию; null — значения по умолчанию нет (удаляется).</summary>
     public string? Default { get; init; }
 
+    /// <summary>Не менять настройку отсутствующего компонента AppX. Откат сохранённого значения от этого условия не зависит.</summary>
+    public string? RequiredPackage { get; init; }
+
     private RegValue Target => new(Kind, Value);
 
     public override Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct) =>
-        Task.FromResult(Target.SameAs(p.Registry.GetValue(Path, Name)) ? ActionState.Applied : ActionState.NotApplied);
+        Task.FromResult(RequiredPackage is not null && !p.Apps.IsInstalled(RequiredPackage)
+            ? ActionState.NotApplicable
+            : Target.SameAs(p.Registry.GetValue(Path, Name)) ? ActionState.Applied : ActionState.NotApplied);
 
     public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct) =>
         Task.FromResult(Serialize(p.Registry.GetValue(Path, Name)));
 
     public override Task ApplyAsync(PlatformServices p, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        // Компонент мог быть удалён после сканирования. Не создавать для него политику.
+        if (RequiredPackage is not null && !p.Apps.IsInstalled(RequiredPackage))
+            return Task.CompletedTask;
+
         try
         {
             p.Registry.SetValue(Path, Name, Target);
