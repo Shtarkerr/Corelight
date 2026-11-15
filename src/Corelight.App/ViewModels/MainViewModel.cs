@@ -25,7 +25,8 @@ public sealed partial class MainViewModel : ObservableObject
         HomeViewModel home,
         ScanResultsViewModel scan,
         AdvancedViewModel advanced,
-        HistoryViewModel history)
+        HistoryViewModel history,
+        CleanupViewModel cleanup)
     {
         State = state;
         _dialogs = dialogs;
@@ -37,6 +38,7 @@ public sealed partial class MainViewModel : ObservableObject
             new NavItem("Результаты сканирования", SymbolRegular.TaskListLtr24, scan),
             new NavItem("Расширенное", SymbolRegular.Wrench24, advanced),
             new NavItem("История и откат", SymbolRegular.History24, history),
+            new NavItem("Очистка диска", SymbolRegular.Delete24, cleanup),
         ];
         navigation.NavigationRequested += type => SelectedItem = Items.First(i => i.Page.GetType() == type);
     }

@@ -173,6 +173,93 @@ public class TweakEngineTests
     }
 
     [Fact]
+    public async Task Running_manual_service_is_running_again_after_revert()
+    {
+        var sys = new TestSystem();
+        sys.Services.StartTypes["MapsBroker"] = ServiceStartType.Manual;
+        sys.Services.Running.Add("MapsBroker");
+        var engine = sys.CreateEngine();
+        var tweak = TestSystem.Tweak(new ServiceStartupAction { Service = "MapsBroker" });
+
+        Assert.True((await engine.ApplyAsync(tweak)).Confirmed);
+        Assert.False(sys.Services.IsRunning("MapsBroker"));
+        await engine.RevertAsync(tweak);
+
+        Assert.Equal(ServiceStartType.Manual, sys.Services.StartTypes["MapsBroker"]);
+        Assert.True(sys.Services.IsRunning("MapsBroker"));
+        Assert.Null(sys.Backups.Get(tweak.Id));
+    }
+
+    [Fact]
+    public async Task Stopped_automatic_service_stays_stopped_after_revert()
+    {
+        var sys = new TestSystem();
+        sys.Services.StartTypes["MapsBroker"] = ServiceStartType.Automatic;
+        var engine = sys.CreateEngine();
+        var tweak = TestSystem.Tweak(new ServiceStartupAction { Service = "MapsBroker" });
+
+        await engine.ApplyAsync(tweak);
+        await engine.RevertAsync(tweak);
+
+        Assert.Equal(ServiceStartType.Automatic, sys.Services.StartTypes["MapsBroker"]);
+        Assert.False(sys.Services.IsRunning("MapsBroker"));
+    }
+
+    [Fact]
+    public async Task Service_that_cannot_stop_is_unconfirmed_and_requests_reboot()
+    {
+        var sys = new TestSystem();
+        sys.Services.StartTypes["MapsBroker"] = ServiceStartType.Manual;
+        sys.Services.Running.Add("MapsBroker");
+        sys.Services.CannotStop.Add("MapsBroker");
+        var engine = sys.CreateEngine();
+        var tweak = TestSystem.Tweak(new ServiceStartupAction { Service = "MapsBroker" });
+
+        var result = await engine.ApplyAsync(tweak);
+        Assert.False(result.Confirmed);
+        Assert.True(result.RequiresReboot);
+        Assert.Contains(result.Warnings, w => w.Contains("перезагрузите"));
+        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
+        Assert.NotNull(sys.Backups.Get(tweak.Id));
+        sys.Services.Running.Remove("MapsBroker"); // После перезагрузки.
+        Assert.Equal(TweakState.Applied, await engine.DetectAsync(tweak));
+    }
+
+    [Fact]
+    public async Task Failed_restart_keeps_service_backup_for_retry()
+    {
+        var sys = new TestSystem();
+        sys.Services.StartTypes["MapsBroker"] = ServiceStartType.Manual;
+        sys.Services.Running.Add("MapsBroker");
+        var engine = sys.CreateEngine();
+        var tweak = TestSystem.Tweak(new ServiceStartupAction { Service = "MapsBroker" });
+        await engine.ApplyAsync(tweak);
+
+        sys.Services.CannotStart.Add("MapsBroker");
+        await Assert.ThrowsAsync<TweakException>(() => engine.RevertAsync(tweak));
+        Assert.NotNull(sys.Backups.Get(tweak.Id));
+        sys.Services.CannotStart.Clear();
+        await engine.RevertAsync(tweak);
+        Assert.True(sys.Services.IsRunning("MapsBroker"));
+    }
+
+    [Fact]
+    public async Task Legacy_service_backup_restores_start_type()
+    {
+        var sys = new TestSystem();
+        sys.Services.StartTypes["MapsBroker"] = ServiceStartType.Disabled;
+        var tweak = TestSystem.Tweak(new ServiceStartupAction { Service = "MapsBroker" });
+        sys.Backups.Save(new Corelight.Core.Backup.BackupRecord
+        {
+            TweakId = tweak.Id, Title = tweak.Title, AppliedAt = DateTimeOffset.Now,
+            Actions = [new Corelight.Core.Backup.ActionBackup(true, "Manual")],
+        });
+        await sys.CreateEngine().RevertAsync(tweak);
+        Assert.Equal(ServiceStartType.Manual, sys.Services.StartTypes["MapsBroker"]);
+        Assert.Null(sys.Backups.Get(tweak.Id));
+    }
+
+    [Fact]
     public async Task Revert_without_backup_uses_windows_default()
     {
         var sys = new TestSystem();

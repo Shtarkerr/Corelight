@@ -42,6 +42,13 @@ internal static class DebugTour
         await SettleAsync(state);
         Save(window, dir, "4-history");
 
+        main.SelectedItem = main.Items.First(i => i.Page is CleanupViewModel);
+        await SettleAsync(state);
+        Save(window, dir, "4-cleanup-before");
+        await services.GetRequiredService<CleanupViewModel>().AnalyzeCommand.ExecuteAsync(null);
+        await SettleAsync(state);
+        Save(window, dir, "4-cleanup-analysis");
+
         // Диалоги только показываются и закрываются без выбора, поэтому ничего не применяется.
         var dialogs = services.GetRequiredService<DialogService>();
         await CaptureDialogAsync(dir, "5-dialog-confirm", () => dialogs.ConfirmAsync(

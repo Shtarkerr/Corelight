@@ -11,6 +11,7 @@ using Corelight.App.ViewModels;
 using Corelight.Core;
 using Corelight.Core.Backup;
 using Corelight.Core.Catalog;
+using Corelight.Core.Cleanup;
 using Corelight.Core.Platform;
 using Corelight.Core.Scanning;
 using Corelight.Core.Startup;
@@ -107,6 +108,7 @@ public partial class App : Application
         services.AddSingleton<Scanner>();
         services.AddSingleton<RestorePointService>();
         services.AddSingleton<StartupManager>();
+        services.AddSingleton<DiskCleanupService>();
 
         // Приложение
         services.AddSingleton<AppState>();
@@ -117,6 +119,7 @@ public partial class App : Application
         services.AddSingleton<ScanResultsViewModel>();
         services.AddSingleton<AdvancedViewModel>();
         services.AddSingleton<HistoryViewModel>();
+        services.AddSingleton<CleanupViewModel>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
 

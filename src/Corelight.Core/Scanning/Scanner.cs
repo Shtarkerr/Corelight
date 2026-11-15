@@ -8,7 +8,7 @@ namespace Corelight.Core.Scanning;
 /// <param name="Recommended">Рекомендуется ли твик для этого ПК.</param>
 public sealed record TweakStatus(TweakDefinition Tweak, TweakState State, string? UnavailableReason, bool Recommended)
 {
-    public bool IsAvailable => UnavailableReason is null && State != TweakState.NotApplicable;
+    public bool IsAvailable => UnavailableReason is null && State is not (TweakState.NotApplicable or TweakState.Unknown);
 
     /// <summary>Что попадает в результаты сканирования: рекомендовано и ещё не применено.</summary>
     public bool IsSuggestion => IsAvailable && Recommended && State == TweakState.NotApplied;
@@ -55,9 +55,11 @@ public sealed class Scanner(TweakCatalog catalog, TweakEngine engine, HardwarePr
         Task.Run(async () =>
         {
             var reason = UnavailableReason(tweak, hardware);
-            var state = reason is null ? await engine.DetectAsync(tweak, ct) : TweakState.NotApplicable;
+            var detection = reason is null ? await engine.DetectDetailedAsync(tweak, ct) : new TweakDetection(TweakState.NotApplicable);
+            if (detection.State == TweakState.Unknown)
+                reason = "Не удалось проверить состояние: " + detection.Error;
             var recommended = tweak.Recommended && tweak.RecommendWhen.All(hardware.Satisfies);
-            return new TweakStatus(tweak, state, reason, recommended);
+            return new TweakStatus(tweak, detection.State, reason, recommended);
         }, ct);
 
     private static string? UnavailableReason(TweakDefinition tweak, HardwareProfile hardware)

@@ -1,4 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using System.Windows.Input;
 using Corelight.Core.Scanning;
 using Corelight.Core.SystemInfo;
 
@@ -21,6 +23,12 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
     [ObservableProperty]
     public partial string? BusyText { get; set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanCancelBusy))]
+    public partial ICommand? BusyCancelCommand { get; set; }
+
+    public bool CanCancelBusy => BusyCancelCommand is not null;
+
     /// <summary>Увеличивается после каждого изменения системы, чтобы страницы знали, что пора перечитать состояние.</summary>
     public int ChangeVersion { get; private set; }
 
@@ -32,17 +40,19 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
     public void MarkSystemChanged() => ChangeVersion++;
 
     /// <summary>Показывает индикатор занятости. Вложенные вызовы допустимы: индикатор скроется после последнего.</summary>
-    public IDisposable BeginBusy(string text)
+    public IDisposable BeginBusy(string text, Action? cancel = null)
     {
         _busyDepth++;
         BusyText = text;
         IsBusy = true;
-        return new BusyScope(this);
+        var previous = BusyCancelCommand;
+        BusyCancelCommand = cancel is null ? null : new RelayCommand(cancel);
+        return new BusyScope(this, previous);
     }
 
     private int _busyDepth;
 
-    private sealed class BusyScope(AppState state) : IDisposable
+    private sealed class BusyScope(AppState state, ICommand? previousCancel) : IDisposable
     {
         private bool _disposed;
 
@@ -51,6 +61,7 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
             if (_disposed)
                 return;
             _disposed = true;
+            state.BusyCancelCommand = previousCancel;
             if (--state._busyDepth > 0)
                 return;
             state.IsBusy = false;

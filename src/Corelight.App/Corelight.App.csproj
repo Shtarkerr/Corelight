@@ -11,7 +11,7 @@
     <RootNamespace>Corelight.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Product>Corelight</Product>
-    <Version>0.1.0-beta.2</Version>
+    <Version>0.1.0-beta.3</Version>
   </PropertyGroup>
 
   <!-- dotnet publish src/Corelight.App -c Release  →  один Corelight.exe без установки .NET -->

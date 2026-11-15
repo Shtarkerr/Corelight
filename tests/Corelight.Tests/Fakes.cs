@@ -44,6 +44,9 @@ internal sealed class FakeServices : IServiceControl
 {
     public Dictionary<string, ServiceStartType> StartTypes { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> Failing { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> Running { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> CannotStop { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> CannotStart { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public ServiceStartType? GetStartType(string serviceName) =>
         StartTypes.TryGetValue(serviceName, out var t) ? t : null;
@@ -56,9 +59,15 @@ internal sealed class FakeServices : IServiceControl
         return Task.CompletedTask;
     }
 
-    public void TryStop(string serviceName) { }
+    public bool IsRunning(string serviceName) => Running.Contains(serviceName);
+    public bool TryStop(string serviceName)
+    {
+        if (CannotStop.Contains(serviceName) && Running.Contains(serviceName)) return false;
+        Running.Remove(serviceName);
+        return true;
+    }
 
-    public void TryStart(string serviceName) { }
+    public bool TryStart(string serviceName) { if (CannotStart.Contains(serviceName)) return false; Running.Add(serviceName); return true; }
 }
 
 internal sealed class FakeTasks : IScheduledTaskControl

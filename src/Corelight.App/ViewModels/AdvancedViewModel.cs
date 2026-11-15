@@ -38,8 +38,6 @@ public sealed partial class AdvancedViewModel(
     DialogService dialogs,
     ILogger<AdvancedViewModel> log) : ObservableObject, INavigationAware
 {
-    private int _renderedVersion = -1;
-
     public ObservableCollection<AdvancedSectionViewModel> Sections { get; } = [];
 
     [ObservableProperty]
@@ -47,9 +45,6 @@ public sealed partial class AdvancedViewModel(
 
     public async Task OnNavigatedToAsync()
     {
-        if (_renderedVersion == state.ChangeVersion)
-            return;
-
         try
         {
             using (state.BeginBusy("Проверка текущих настроек…"))
@@ -64,7 +59,7 @@ public sealed partial class AdvancedViewModel(
 
     private async Task LoadAsync()
     {
-        engine.RefreshExternalState();
+        await Task.Run(engine.RefreshExternalState);
         var hardware = await state.GetHardwareAsync();
         var selectedTitle = SelectedSection?.Title;
         var sections = new List<AdvancedSectionViewModel>();
@@ -104,7 +99,6 @@ public sealed partial class AdvancedViewModel(
         foreach (var section in sections)
             Sections.Add(section);
         SelectedSection = Sections.FirstOrDefault(s => s.Title == selectedTitle) ?? Sections.FirstOrDefault();
-        _renderedVersion = state.ChangeVersion;
     }
 
     private async Task OnToggleAsync(TweakItemViewModel item, bool turnOn)
@@ -146,7 +140,6 @@ public sealed partial class AdvancedViewModel(
                 }
             }
             item.IsBusy = false;
-            _renderedVersion = state.ChangeVersion;
         }
     }
 

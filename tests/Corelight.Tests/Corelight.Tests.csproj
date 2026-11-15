@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Corelight.Core\Corelight.Core.csproj" />
+    <ProjectReference Include="..\..\src\Corelight.App\Corelight.App.csproj" />
   </ItemGroup>
 
 </Project>

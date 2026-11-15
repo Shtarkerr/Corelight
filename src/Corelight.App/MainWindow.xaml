@@ -29,6 +29,9 @@
         <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
             <views:HistoryView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:CleanupViewModel}">
+            <views:CleanupView />
+        </DataTemplate>
     </ui:FluentWindow.Resources>
 
     <Grid>
@@ -106,6 +109,8 @@
                 <StackPanel>
                     <ui:ProgressRing IsIndeterminate="True" HorizontalAlignment="Center" />
                     <TextBlock Margin="0,16,0,0" Style="{StaticResource SecondaryText}" TextAlignment="Center" Text="{Binding State.BusyText}" />
+                    <ui:Button Margin="0,16,0,0" Content="Остановить" HorizontalAlignment="Center"
+                               Command="{Binding State.BusyCancelCommand}" Visibility="{Binding State.CanCancelBusy, Converter={StaticResource BoolToVisibility}}"/>
                 </StackPanel>
             </Border>
         </Grid>

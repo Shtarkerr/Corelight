@@ -66,6 +66,7 @@ public sealed class WindowsIntegrationTests : IDisposable
 
         Assert.Equal(ServiceStartType.Automatic, services.GetStartType("Winmgmt"));
         Assert.Null(services.GetStartType("Corelight_NoSuchService"));
+        Assert.True(services.IsRunning("RpcSs"));
     }
 
     [Fact]

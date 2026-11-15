@@ -18,13 +18,15 @@ public interface IServiceControl
 {
     /// <returns>null, если службы нет в системе.</returns>
     ServiceStartType? GetStartType(string serviceName);
+    /// <returns>true, если служба ещё работает или останавливается; false, если остановлена.</returns>
+    bool IsRunning(string serviceName);
 
     Task SetStartTypeAsync(string serviceName, ServiceStartType startType, CancellationToken ct = default);
 
     /// <summary>Пытается остановить службу; ошибки не пробрасываются (служба отключится после перезагрузки).</summary>
-    void TryStop(string serviceName);
+    bool TryStop(string serviceName);
 
-    void TryStart(string serviceName);
+    bool TryStart(string serviceName);
 }
 
 public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunner runner, ILogger<WindowsServiceControl> log) : IServiceControl
@@ -49,6 +51,13 @@ public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunn
         };
     }
 
+    public bool IsRunning(string serviceName)
+    {
+        using var sc = new ServiceController(serviceName);
+        sc.Refresh();
+        return sc.Status != ServiceControllerStatus.Stopped;
+    }
+
     public async Task SetStartTypeAsync(string serviceName, ServiceStartType startType, CancellationToken ct = default)
     {
         // sc.exe идёт через диспетчер служб, поэтому изменение вступает в силу сразу, без перезагрузки.
@@ -67,36 +76,43 @@ public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunn
             throw new InvalidOperationException($"Не удалось изменить тип запуска службы {serviceName}: {new Win32Exception(result.ExitCode).Message}");
     }
 
-    public void TryStop(string serviceName)
+    public bool TryStop(string serviceName)
     {
         try
         {
             using var sc = new ServiceController(serviceName);
-            if (sc.Status is ServiceControllerStatus.Stopped or ServiceControllerStatus.StopPending)
-                return;
-            if (!sc.CanStop)
-                return;
-            sc.Stop();
+            sc.Refresh();
+            if (sc.Status == ServiceControllerStatus.Stopped) return true;
+            if (sc.Status != ServiceControllerStatus.StopPending)
+            {
+                if (!sc.CanStop) return false;
+                sc.Stop();
+            }
             sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15));
+            return true;
         }
         catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or System.ServiceProcess.TimeoutException)
         {
             log.LogWarning(ex, "Служба {Service} не остановлена сразу; изменения вступят в силу после перезагрузки", serviceName);
+            return false;
         }
     }
 
-    public void TryStart(string serviceName)
+    public bool TryStart(string serviceName)
     {
         try
         {
             using var sc = new ServiceController(serviceName);
-            if (sc.Status is ServiceControllerStatus.Running or ServiceControllerStatus.StartPending)
-                return;
-            sc.Start();
+            sc.Refresh();
+            if (sc.Status == ServiceControllerStatus.Running) return true;
+            if (sc.Status != ServiceControllerStatus.StartPending) sc.Start();
+            sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(15));
+            return true;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or System.ServiceProcess.TimeoutException)
         {
             log.LogWarning(ex, "Не удалось запустить службу {Service}", serviceName);
+            return false;
         }
     }
 }

@@ -10,12 +10,14 @@ public enum TweakState
     NotApplicable,
     NotApplied,
     Applied,
+    Unknown,
 }
 
 public sealed class TweakException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <param name="Warnings">Ошибки необязательных действий, которые не помешали применить твик.</param>
-public sealed record TweakResult(IReadOnlyList<string> Warnings, bool Confirmed = true);
+public sealed record TweakResult(IReadOnlyList<string> Warnings, bool Confirmed = true, bool RequiresReboot = false);
+public sealed record TweakDetection(TweakState State, string? Error = null);
 
 public sealed class TweakEngine(PlatformServices platform, IBackupStore backups, ILogger<TweakEngine> log)
 {
@@ -26,30 +28,40 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
     }
     public IBackupStore Backups => backups;
 
-    public async Task<TweakState> DetectAsync(TweakDefinition tweak, CancellationToken ct = default)
+    public async Task<TweakState> DetectAsync(TweakDefinition tweak, CancellationToken ct = default) =>
+        (await DetectDetailedAsync(tweak, ct)).State;
+
+    public async Task<TweakDetection> DetectDetailedAsync(TweakDefinition tweak, CancellationToken ct = default)
     {
         var states = new List<(TweakAction Action, ActionState State)>();
         foreach (var action in tweak.Actions)
-            states.Add((action, await SafeDetectAsync(action, ct)));
+        {
+            try { states.Add((action, await action.DetectAsync(platform, ct))); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogWarning(ex, "Не удалось определить состояние {Action}", action.Describe());
+                return new(TweakState.Unknown, ex.Message);
+            }
+        }
 
         var relevant = states.Where(s => s.State != ActionState.NotApplicable).ToList();
         if (relevant.Count == 0)
-            return TweakState.NotApplicable;
+            return new(TweakState.NotApplicable);
 
         // Состояние определяют обязательные действия.
         // Варианты одного приложения (например, старый/новый Teams) считаются установленными,
         // пока присутствует хотя бы один пакет; optional влияет на обработку ошибок, а не на наличие.
         var required = relevant.Where(s => !s.Action.Optional || s.Action is Corelight.Core.Actions.AppxPackageAction).ToList();
         if (required.Count > 0)
-            return required.All(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied;
+            return new(required.All(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied);
 
         // Твик только из необязательных действий (набор задач планировщика) применён, если применено всё.
         // Исключение — мы его уже применяли, и часть задач Windows отключить не дала: повторять бессмысленно.
         if (relevant.All(s => s.State == ActionState.Applied))
-            return TweakState.Applied;
-        return backups.Get(tweak.Id) is not null && relevant.Any(s => s.State == ActionState.Applied)
+            return new(TweakState.Applied);
+        return new(backups.Get(tweak.Id) is not null && relevant.Any(s => s.State == ActionState.Applied)
             ? TweakState.Applied
-            : TweakState.NotApplied;
+            : TweakState.NotApplied);
     }
 
     /// <summary>
@@ -144,14 +156,19 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         }
 
         var confirmed = true;
+        var unconfirmed = new HashSet<int>();
         foreach (var i in attempted)
         {
             if (optionalFailures.Contains(i)) continue;
             if (await SafeDetectAsync(tweak.Actions[i], ct) == ActionState.Applied) continue;
+            unconfirmed.Add(i);
             warnings.Add($"Результат для «{tweak.Actions[i].Describe()}» пока не подтверждён. Бэкап сохранён; проверьте состояние после перезагрузки.");
             if (!tweak.Actions[i].Optional) confirmed = false;
         }
-        return new TweakResult(warnings, confirmed);
+        var servicePending = unconfirmed.Any(i => tweak.Actions[i] is Corelight.Core.Actions.ServiceStartupAction { LastStopPending: true });
+        if (servicePending)
+            warnings.Add("Одна из служб не остановилась сразу; для завершения отключения перезагрузите Windows.");
+        return new TweakResult(warnings, confirmed, servicePending);
     }
 
     public async Task RevertAsync(TweakDefinition tweak, CancellationToken ct = default)

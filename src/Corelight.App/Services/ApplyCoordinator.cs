@@ -60,6 +60,7 @@ public sealed class ApplyCoordinator(
                         var result = await Task.Run(() => engine.ApplyAsync(tweak));
                         warnings.AddRange(result.Warnings.Select(w => $"{tweak.Title}: {w}"));
                         confirmed = result.Confirmed;
+                        if (result.RequiresReboot) state.RebootRequired = true;
                     }
                     else
                     {
@@ -146,7 +147,7 @@ public sealed class ApplyCoordinator(
     private Task ShowSummaryAsync(bool apply, int succeeded, int pending, List<string> failures, List<string> warnings)
     {
         var text = new StringBuilder();
-        text.AppendLine(apply ? $"Применено изменений: {succeeded}." : $"Откачено изменений: {succeeded}.");
+        text.AppendLine(apply ? $"Применено изменений: {succeeded}." : $"Отменено изменений: {succeeded}.");
         if (pending > 0) text.AppendLine($"Результат пока не подтверждён: {pending}.");
         if (failures.Count > 0)
         {

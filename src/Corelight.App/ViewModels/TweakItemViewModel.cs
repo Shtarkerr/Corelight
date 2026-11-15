@@ -66,7 +66,7 @@ public partial class TweakItemViewModel(TweakDefinition tweak, Func<TweakItemVie
         IsOn = status.State == TweakState.Applied;
         _suppressToggle = false;
         UnavailableReason = status.UnavailableReason
-            ?? (status.State == TweakState.NotApplicable ? "Компонентов этого твика нет в вашей системе." : null);
+            ?? (status.State switch { TweakState.NotApplicable => "Компонентов этого пункта нет в системе.", TweakState.Unknown => "Не удалось проверить состояние.", _ => null });
         OnStatusChanged();
     }
 

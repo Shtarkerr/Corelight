@@ -1,6 +1,7 @@
 using Corelight.Core.Actions;
 using Corelight.Core.Catalog;
 using Corelight.Core.Platform;
+using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
 
 namespace Corelight.Tests;
@@ -100,10 +101,26 @@ public class ComponentPresenceTests
         sys.Components.Fail = true;
         var tweak = TweakCatalog.LoadEmbedded().Find("privacy.recall")!;
         var engine = sys.CreateEngine();
-        Assert.Equal(TweakState.NotApplicable, await engine.DetectAsync(tweak));
+        Assert.Equal(TweakState.Unknown, await engine.DetectAsync(tweak));
         await Assert.ThrowsAsync<InvalidOperationException>(() => engine.ApplyAsync(tweak));
         Assert.Empty(sys.Registry.Values);
         Assert.Empty(sys.Backups.GetAll());
+    }
+
+    [Fact]
+    public async Task Failed_required_check_never_makes_partly_detected_tweak_applied()
+    {
+        var sys = new TestSystem();
+        sys.Components.Fail = true;
+        const string key = @"HKCU\Software\Corelight.Tests\Detection";
+        sys.Registry.SetValue(key, "Flag", RegValue.DWord(1));
+        var tweak = TestSystem.Tweak(
+            new RegistryValueAction { Path = key, Name = "Flag", Value = "1" },
+            new RegistryValueAction { Path = key, Name = "Recall", Value = "1", RequiredComponent = WindowsComponent.Recall });
+        var detection = await sys.CreateEngine().DetectDetailedAsync(tweak);
+        Assert.Equal(TweakState.Unknown, detection.State);
+        Assert.Contains("probe failed", detection.Error);
+        Assert.False(new TweakStatus(tweak, detection.State, "Не удалось проверить", true).IsAvailable);
     }
 
     [Theory]
