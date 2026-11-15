@@ -145,6 +145,15 @@ internal sealed class MemoryBackupStore : IBackupStore
     public void Remove(string tweakId) => _records.Remove(tweakId);
 }
 
+internal sealed class FakeComponents : IComponentPresence
+{
+    public HashSet<WindowsComponent> Present { get; } = [];
+    public bool Fail { get; set; }
+    public void Refresh() { }
+    public Task<bool> IsPresentAsync(WindowsComponent component, CancellationToken ct) =>
+        Fail ? throw new InvalidOperationException("Component probe failed") : Task.FromResult(Present.Contains(component));
+}
+
 /// <summary>Собранное тестовое окружение: фейковая система + движок.</summary>
 internal sealed class TestSystem
 {
@@ -154,9 +163,10 @@ internal sealed class TestSystem
     public FakeApps Apps { get; } = new();
     public FakePower Power { get; } = new();
     public FakeOneDrive OneDrive { get; } = new();
+    public FakeComponents Components { get; } = new();
     public MemoryBackupStore Backups { get; } = new();
 
-    public PlatformServices Platform => new(Registry, Services, Tasks, Apps, Power, OneDrive);
+    public PlatformServices Platform => new(Registry, Services, Tasks, Apps, Power, OneDrive, Components);
 
     public TweakEngine CreateEngine() => new(Platform, Backups, NullLogger<TweakEngine>.Instance);
 

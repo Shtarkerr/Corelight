@@ -49,8 +49,8 @@
       "recommended": true,
       "impact": "Medium",
       "actions": [
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "StartupBoostEnabled", "value": "0" },
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "BackgroundModeEnabled", "value": "0" }
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "StartupBoostEnabled", "value": "0", "requiredComponent": "Edge" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "name": "BackgroundModeEnabled", "value": "0", "requiredComponent": "Edge" }
       ]
     },
     {

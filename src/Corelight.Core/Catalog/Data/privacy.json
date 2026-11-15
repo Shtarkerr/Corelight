@@ -48,7 +48,7 @@
       "description": "Отключает сбор и отправку дампов сбоев в Microsoft. Стабильность программ не меняется.",
       "recommended": true,
       "actions": [
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting", "name": "Disabled", "value": "1" },
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting", "name": "Disabled", "value": "1", "requiredService": "WerSvc" },
         { "type": "service", "service": "WerSvc", "startType": "Disabled", "default": "Manual", "optional": true }
       ]
     },
@@ -99,8 +99,8 @@
       "recommended": true,
       "minBuild": 26100,
       "actions": [
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "value": "1" },
-        { "type": "registry", "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "value": "1" }
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "value": "1", "requiredComponent": "Recall" },
+        { "type": "registry", "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\WindowsAI", "name": "DisableAIDataAnalysis", "value": "1", "requiredComponent": "Recall" }
       ]
     },
     {

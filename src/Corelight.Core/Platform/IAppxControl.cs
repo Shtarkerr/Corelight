@@ -8,7 +8,7 @@ public interface IAppxControl
     /// <summary>Обновляет сведения о пакетах после установки вне Corelight.</summary>
     void Refresh();
 
-    /// <summary>Установлен ли пакет у текущего пользователя или подготовлен (provisioned) для новых пользователей.</summary>
+    /// <summary>Установлен ли пакет у любого пользователя или подготовлен (provisioned) для новых пользователей.</summary>
     bool IsInstalled(string packageName);
 
     /// <summary>Удаляет пакет у всех пользователей и снимает его подготовку, чтобы он не вернулся у новых учётных записей.</summary>
@@ -107,8 +107,17 @@ public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsApp
     private HashSet<string> LoadInstalledNames()
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in _pm.FindPackagesForUser(string.Empty))
-            names.Add(p.Id.Name);
+        try
+        {
+            foreach (var p in _pm.FindPackages())
+                names.Add(p.Id.Name);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            log.LogWarning(ex, "Не удалось получить пакеты всех пользователей; проверяем текущего пользователя");
+            foreach (var p in _pm.FindPackagesForUser(string.Empty))
+                names.Add(p.Id.Name);
+        }
         try
         {
             foreach (var p in _pm.FindProvisionedPackages())

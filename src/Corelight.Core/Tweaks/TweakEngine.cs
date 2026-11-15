@@ -19,7 +19,11 @@ public sealed record TweakResult(IReadOnlyList<string> Warnings, bool Confirmed 
 
 public sealed class TweakEngine(PlatformServices platform, IBackupStore backups, ILogger<TweakEngine> log)
 {
-    public void RefreshExternalState() => platform.Apps.Refresh();
+    public void RefreshExternalState()
+    {
+        platform.Apps.Refresh();
+        platform.Components?.Refresh();
+    }
     public IBackupStore Backups => backups;
 
     public async Task<TweakState> DetectAsync(TweakDefinition tweak, CancellationToken ct = default)
@@ -33,7 +37,9 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             return TweakState.NotApplicable;
 
         // Состояние определяют обязательные действия.
-        var required = relevant.Where(s => !s.Action.Optional).ToList();
+        // Варианты одного приложения (например, старый/новый Teams) считаются установленными,
+        // пока присутствует хотя бы один пакет; optional влияет на обработку ошибок, а не на наличие.
+        var required = relevant.Where(s => !s.Action.Optional || s.Action is Corelight.Core.Actions.AppxPackageAction).ToList();
         if (required.Count > 0)
             return required.All(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied;
 

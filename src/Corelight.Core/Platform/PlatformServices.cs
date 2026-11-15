@@ -7,4 +7,5 @@ public sealed record PlatformServices(
     IScheduledTaskControl Tasks,
     IAppxControl Apps,
     IPowerControl Power,
-    IOneDriveControl OneDrive);
+    IOneDriveControl OneDrive,
+    IComponentPresence? Components = null);
