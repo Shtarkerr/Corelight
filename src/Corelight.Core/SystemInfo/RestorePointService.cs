@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Management;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Corelight.Core.Platform;
 
@@ -94,7 +95,11 @@ public sealed class RestorePointService
             var before = _access.LatestSequenceNumber();
             var code = _access.Create(description);
             _log.LogInformation("SystemRestore.CreateRestorePoint: код 0x{Code:X8}, предыдущая точка {Sequence}", code, before);
-            if (code is 1058u or 0x80070422u) return RestorePointResult.ProtectionDisabled;
+            if (code is 1058u or 0x80070422u)
+            {
+                LastError = "Windows сообщает, что служба восстановления системы отключена (0x80070422). Включите защиту системы и повторите создание точки.";
+                return RestorePointResult.ProtectionDisabled;
+            }
             if (code != 0)
             {
                 LastError = $"Windows вернула код 0x{code:X8}: {new Win32Exception(unchecked((int)code)).Message}";
@@ -116,9 +121,17 @@ public sealed class RestorePointService
             _log.LogWarning("{Reason}", LastError);
             return RestorePointResult.NotCreated;
         }
+        catch (COMException ex) when (unchecked((uint)ex.ErrorCode) == 0x80070422u)
+        {
+            LastError = "Windows сообщает, что служба восстановления системы отключена (0x80070422). Включите защиту системы и повторите создание точки.";
+            _log.LogWarning(ex, "Защита системы выключена: {Reason}", LastError);
+            return RestorePointResult.ProtectionDisabled;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            LastError = ex.Message;
+            LastError = string.IsNullOrWhiteSpace(ex.Message)
+                ? $"Ошибка Windows 0x{unchecked((uint)ex.HResult):X8} при создании точки восстановления."
+                : ex.Message;
             _log.LogWarning(ex, "Не удалось создать точку восстановления");
             return RestorePointResult.Failed;
         }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Corelight.Core.Platform;
 using Corelight.Core.SystemInfo;
+using System.Runtime.InteropServices;
 
 namespace Corelight.Tests;
 
@@ -8,6 +9,21 @@ public sealed class RestorePointTests
 {
     private const string Key = @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore";
     private const string Frequency = "SystemRestorePointCreationFrequency";
+
+    [Theory]
+    [InlineData(unchecked((int)0x80070422), RestorePointResult.ProtectionDisabled)]
+    [InlineData(unchecked((int)0x80070005), RestorePointResult.Failed)]
+    public async Task Wmi_com_errors_are_classified_and_empty_messages_show_the_windows_code(int code, RestorePointResult expected)
+    {
+        var registry = new FakeRegistry();
+        registry.SetValue(Key, Frequency, RegValue.DWord(120));
+        var service = new RestorePointService(registry, NullLogger<RestorePointService>.Instance,
+            new RestoreAccess { CreateError = new COMException("", code) });
+
+        Assert.Equal(expected, await service.CreateAsync("Test"));
+        Assert.Contains(unchecked((uint)code).ToString("X8"), service.LastError);
+        Assert.Equal("120", registry.GetValue(Key, Frequency)!.Data);
+    }
 
     [Theory]
     [InlineData(0u, RestorePointResult.Created)]
@@ -45,9 +61,15 @@ public sealed class RestorePointTests
     {
         public uint Code { get; init; }
         public bool CreatePoint { get; init; } = true;
+        public Exception? CreateError { get; init; }
         private uint _sequence;
         public uint LatestSequenceNumber() => _sequence;
-        public uint Create(string description) { if (Code == 0 && CreatePoint) _sequence++; return Code; }
+        public uint Create(string description)
+        {
+            if (CreateError is not null) throw CreateError;
+            if (Code == 0 && CreatePoint) _sequence++;
+            return Code;
+        }
         public uint Enable(string drive) => 0;
     }
 
