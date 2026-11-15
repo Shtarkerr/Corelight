@@ -27,6 +27,7 @@ GuardrailValidator проверяет запрещённые цели катал
 - C# / .NET 10, WPF, WPF-UI, CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, Serilog, xUnit.
 - Лицензии распространяемых зависимостей перечислены в THIRD-PARTY-NOTICES.txt; обновлять при добавлении таких пакетов.
 - Release: win-x64, self-contained, один Corelight.exe и два файла лицензий; .NET на ПК пользователя отдельно не требуется. Версия в проекте: 0.1.0-beta.1. В журнале используется InformationalVersion, включая пометку beta и ревизию сборки.
+- Актуальная сборка в Corelight-Test: C:\Corelight\v0.1.0-beta.1\Corelight.exe, ярлык «Corelight (обновлённый)». Это опубликованный бета-релиз из d0ca389; последующие изменения main относятся к документации. Открытое старое окно программы нужно закрыть перед запуском ярлыка.
 - Программа требует администратора. При UAC от другого администратора HKCU относится к его учётной записи. Exe пока не подписан.
 
 ~~~powershell
