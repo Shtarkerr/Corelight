@@ -18,9 +18,9 @@ public sealed class AdvancedSectionViewModel(CategoryInfo info)
 
     public string Hint => Info.Category switch
     {
-        null => "Включённый переключатель — программа запускается вместе с Windows. Сама программа не удаляется.",
-        TweakCategory.Apps => "Показаны только приложения, которые есть в системе или были удалены этой программой.",
-        _ => "Включённый переключатель — оптимизация применена. Выключите его, чтобы вернуть как было.",
+        null => "Включено — автозапуск при входе. Программа не удаляется.",
+        TweakCategory.Apps => "Установленные приложения и удалённые Corelight.",
+        _ => "Включено — оптимизация применена. Выключение — откат.",
     };
 
     public string EmptyText => Info.Category == TweakCategory.Apps

@@ -19,7 +19,7 @@
         <StackPanel Grid.Row="0">
             <TextBlock Style="{StaticResource PageTitle}" Text="Результаты сканирования" />
             <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
-                       Text="Проверьте отмеченные рекомендации перед применением. Пункты «Осторожно» отключают функции или удаляют приложения, которыми вы можете пользоваться. Снимите галочки с того, что хотите сохранить." />
+                       Text="Проверьте выбор: «Осторожно» означает отключение функции или удаление приложения. Снимите галочки с нужного." />
         </StackPanel>
 
         <!-- Сканирования ещё не было -->
@@ -28,7 +28,7 @@
             <DockPanel>
                 <ui:Button DockPanel.Dock="Right" Content="На главную" Command="{Binding GoHomeCommand}" VerticalAlignment="Center" />
                 <TextBlock Style="{StaticResource SecondaryText}" VerticalAlignment="Center"
-                           Text="Сканирование ещё не запускалось. Запустите его на главной странице." />
+                           Text="Запустите сканирование на главной странице." />
             </DockPanel>
         </Border>
 
@@ -39,7 +39,7 @@
                 <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="28" Margin="0,0,16,0" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource ItemTitle}" Text="Доступных рекомендаций не найдено" />
-                    <TextBlock Style="{StaticResource SecondaryText}" Text="Дополнительные настройки можно посмотреть в разделе «Расширенное»." />
+                    <TextBlock Style="{StaticResource SecondaryText}" Text="Другие настройки — в разделе «Расширенное»." />
                 </StackPanel>
             </StackPanel>
         </Border>

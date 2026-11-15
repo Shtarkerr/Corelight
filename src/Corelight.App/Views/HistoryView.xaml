@@ -19,7 +19,7 @@
         <StackPanel Grid.Row="0">
             <TextBlock Style="{StaticResource PageTitle}" Text="История и откат" />
             <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
-                       Text="Здесь все изменения, сделанные программой. Откат возвращает именно те значения, которые были до оптимизации." />
+                       Text="История изменений Corelight и возврат сохранённых настроек." />
             <TextBlock Margin="0,0,0,12" Style="{StaticResource SecondaryText}" Text="{Binding SummaryText}"
                        Visibility="{Binding HasItems, Converter={StaticResource BoolToVisibility}}" />
         </StackPanel>
@@ -33,11 +33,11 @@
                                Command="{Binding RevertAllCommand}" />
                 </StackPanel>
                 <TextBlock Style="{StaticResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,16,0"
-                           Text="Для дополнительного восстановления можно использовать заранее созданную точку восстановления Windows, если она есть." />
+                           Text="Восстановление Windows доступно, если заранее создана точка." />
             </DockPanel>
         </Border>
 
-        <TextBlock Grid.Row="2" Style="{StaticResource SecondaryText}" Text="Программа пока ничего не меняла."
+        <TextBlock Grid.Row="2" Style="{StaticResource SecondaryText}" Text="Изменений для отката нет."
                    Visibility="{Binding HasNoItems, Converter={StaticResource BoolToVisibility}}" />
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">

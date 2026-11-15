@@ -80,7 +80,7 @@ public sealed partial class HistoryViewModel(
             if (restored)
                 state.MarkSystemChanged();
             else
-                await dialogs.ShowInfoAsync("Возврат не подтверждён", "Исходное состояние приложения пока не подтверждено. Откройте «Как вернуть», установите приложение и повторите проверку. Запись сохранена в истории.");
+                await dialogs.ShowInfoAsync("Возврат не подтверждён", "Установите приложение по инструкции «Как вернуть» и повторите проверку. Запись остаётся в истории.");
             Reload();
             return;
         }
@@ -95,10 +95,10 @@ public sealed partial class HistoryViewModel(
         var manualItems = Items.Where(i => !i.CanRevert).ToList();
         var message = $"Записей в истории: {Items.Count}.\nБудет выполнен автоматический откат: {tweaks.Count}.";
         if (tweaks.Any(t => t.Actions.OfType<AppxPackageAction>().Any()))
-            message += "\n\nУдалённые приложения будут заново установлены из Microsoft Store — для этого нужен интернет.";
+            message += "\n\nДля переустановки приложений из Store нужен интернет.";
         if (manualItems.Count > 0)
         {
-            message += $"\n\nПотребуют ручного возврата: {manualItems.Count}. Эти записи останутся в истории:";
+            message += $"\n\nРучной возврат: {manualItems.Count}. Останутся в истории:";
             foreach (var item in manualItems)
                 message += $"\n• {item.Title} — {item.CategoryText}";
         }

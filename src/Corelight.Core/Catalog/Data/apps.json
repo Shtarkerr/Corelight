@@ -7,11 +7,11 @@
     {
       "id": "apps.onedrive",
       "title": "Microsoft OneDrive",
-      "description": "Облачное хранилище Microsoft: синхронизирует файлы между компьютером и облаком, может сохранять копии рабочего стола, документов и фотографий. Удаляйте клиент, если не пользуетесь этой синхронизацией.",
-      "warning": "Синхронизация остановится. Заранее скачайте нужные облачные файлы на компьютер. Если важные папки перенаправлены в OneDrive, сначала отключите их резервное копирование в его настройках. После возврата может потребоваться повторный вход.",
-      "availabilityNote": "Для возврата сохраняется штатный установщик Microsoft. Установка может потребовать доступа к серверам Microsoft; наличие клиента не гарантирует доступность облачного сервиса.",
+      "description": "Синхронизирует файлы с облаком, включая рабочий стол, документы и фото. Удаляйте, если не используете синхронизацию.",
+      "warning": "Синхронизация остановится. Скачайте нужные файлы на ПК и отключите резервное копирование папок, если оно включено. После возврата может понадобиться вход.",
+      "availabilityNote": "Возврат — из сохранённого установщика Microsoft. Может понадобиться интернет; доступ к облаку не гарантирован.",
       "restoreHelpUrl": "https://support.microsoft.com/en-gb/onedrive/reinstall-onedrive",
-      "restoreHelpText": "Откат использует установщик, сохранённый перед удалением. Если он недоступен, скачайте с официальной страницы Microsoft клиент синхронизации OneDrive, установите его и повторите откат в Corelight. Приложение OneDrive из Store не заменяет клиент синхронизации файлов.",
+      "restoreHelpText": "Если сохранённый установщик недоступен, скачайте клиент синхронизации с сайта Microsoft, установите и повторите откат. Версия OneDrive из Store его не заменяет.",
       "recommended": true,
       "preselected": false,
       "risk": "Caution",
@@ -21,7 +21,7 @@
     {
       "id": "apps.clipchamp",
       "title": "Clipchamp",
-      "description": "Видеоредактор Microsoft с облачными функциями. Если вы не монтируете видео в нём, он только занимает место и обновляется в фоне.",
+      "description": "Облачный видеоредактор Microsoft. Если не используете, можно освободить место и убрать его фоновые обновления.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Clipchamp.Clipchamp", "storeId": "9P1J8S7CCWWT" } ]
     },
@@ -29,7 +29,7 @@
       "id": "apps.bing-news",
       "title": "Новости (Microsoft News)",
       "description": "Лента новостей от MSN. Периодически обновляет контент в фоне.",
-      "availabilityNote": "Ограничения в России: автоматический возврат может быть недоступен. VPN не гарантирует скачивание — доступность зависит также от региона Windows и Microsoft Store.",
+      "availabilityNote": "В России возврат может быть недоступен. VPN не гарантирует установку: важен регион Windows и Store.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.BingNews", "storeId": "9WZDNCRFHVFW" } ]
     },
@@ -43,9 +43,9 @@
     {
       "id": "apps.get-help",
       "title": "Техническая поддержка (Get Help)",
-      "description": "Приложение Microsoft для обращения в поддержку и запуска средств устранения неполадок Windows.",
+      "description": "Поддержка Microsoft и диагностика неполадок Windows.",
       "risk": "Caution",
-      "warning": "Удаление может сделать недоступной диагностику сети, обновлений и других неполадок, которая запускается через Get Help. Оставьте приложение, если используете эти средства.",
+      "warning": "Удаление может отключить диагностику сети, обновлений и других неполадок через Get Help. Оставьте, если используете её.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.GetHelp", "storeId": "9PKDZBMV1H3T" } ]
     },
@@ -54,7 +54,7 @@
       "title": "Советы (Tips)",
       "description": "Подсказки о возможностях Windows для новых пользователей.",
       "risk": "Caution",
-      "warning": "Автоматический возврат не предусмотрен. Удаляйте, только если приложение больше не понадобится.",
+      "warning": "Автовозврата нет. Удаляйте, если приложение больше не понадобится.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.Getstarted" } ]
     },
@@ -62,7 +62,7 @@
       "id": "apps.solitaire",
       "title": "Microsoft Solitaire Collection",
       "description": "Сборник карточных игр с рекламой и онлайн-функциями.",
-      "availabilityNote": "Автоматический возврат может не сработать, даже если приложение доступно в Microsoft Store. В таком случае установите его через «Открыть в Store» и повторите откат в Corelight.",
+      "availabilityNote": "Если автовозврат не сработал, установите через «Открыть в Store» и повторите откат. Приложение может быть доступно в Store.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftSolitaireCollection", "storeId": "9WZDNCRFHWD2" } ]
     },
@@ -76,45 +76,45 @@
     {
       "id": "apps.feedback-hub",
       "title": "Центр отзывов (Feedback Hub)",
-      "description": "Отправка отзывов и отчётов об ошибках в Microsoft. Нужен в основном участникам программы Windows Insider.",
+      "description": "Отзывы и отчёты об ошибках для Microsoft. В основном нужен участникам Windows Insider.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.WindowsFeedbackHub", "storeId": "9NBLGGH4R32N" } ]
     },
     {
       "id": "apps.maps",
       "title": "Карты Windows",
-      "description": "Офлайн-карты Microsoft. Приложение больше не развивается, вместо него обычно используют карты в браузере.",
+      "description": "Офлайн-карты Microsoft. Больше не развиваются; альтернатива — карты в браузере.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.WindowsMaps", "storeId": "9WZDNCRDTBVB" } ]
     },
     {
       "id": "apps.office-hub",
       "title": "Microsoft 365 (Office)",
-      "description": "Приложение-витрина для облачного Office и подписки Microsoft 365. Сами программы Office (Word, Excel), если установлены, не затрагиваются.",
-      "availabilityNote": "Ограничения в России: автоматический возврат может быть недоступен. VPN не гарантирует скачивание — доступность зависит также от региона Windows и Microsoft Store.",
+      "description": "Доступ к облачному Office и подписке Microsoft 365. Установленные Word и Excel не затрагиваются.",
+      "availabilityNote": "В России возврат может быть недоступен. VPN не гарантирует установку: важен регион Windows и Store.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftOfficeHub", "storeId": "9WZDNCRD29V9" } ]
     },
     {
       "id": "apps.outlook-new",
       "title": "Outlook (новый)",
-      "description": "Новый почтовый клиент Outlook. Если пользуетесь почтой в браузере или другим клиентом, можно удалить.",
+      "description": "Новый Outlook. Можно удалить, если используете другой почтовый клиент или браузер.",
       "recommended": true,
       "preselected": true,
       "risk": "Caution",
-      "warning": "Будет удалён новый Outlook. Если вы читаете в нём почту или пользуетесь календарём, снимите галочку.",
+      "warning": "Новый Outlook будет удалён. Если используете его почту или календарь, снимите галочку.",
       "actions": [ { "type": "appx", "package": "Microsoft.OutlookForWindows", "storeId": "9NRX63209R7B" } ]
     },
     {
       "id": "apps.teams-personal",
       "title": "Microsoft Teams",
-      "description": "Приложение для общения, работы и учёбы. Может запускаться вместе с Windows и работать в фоне. Удаляйте, если не используете Teams.",
+      "description": "Общение, работа и учёба в Teams. Может запускаться с Windows и работать в фоне.",
       "recommended": true,
       "preselected": true,
       "risk": "Caution",
-      "warning": "Будет удалено приложение Teams. Если оно нужно для общения, работы или учёбы, снимите галочку.",
+      "warning": "Teams будет удалён. Если нужен для общения, работы или учёбы, снимите галочку.",
       "restoreHelpUrl": "https://www.microsoft.com/microsoft-teams/download-app",
-      "restoreHelpText": "Установите Teams с официальной страницы Microsoft. Затем вернитесь в Corelight и нажмите «Проверить возврат»: программа проверит наличие исходных пакетов и уберёт запись, если возврат подтверждён.",
+      "restoreHelpText": "Установите Teams с сайта Microsoft и нажмите «Проверить возврат» в Corelight. Запись исчезнет после подтверждения исходных пакетов.",
       "impact": "Medium",
       "actions": [
         { "type": "appx", "package": "MSTeams" },
@@ -124,7 +124,7 @@
     {
       "id": "apps.power-automate",
       "title": "Power Automate",
-      "description": "Автоматически повторяет заданные действия: например, заполняет формы, переносит данные в Excel или обрабатывает файлы. Если вы не создавали в Power Automate такие сценарии и не пользуетесь ими, приложение можно удалить.",
+      "description": "Автоматизирует действия: заполнение форм, работу с Excel и файлами. Можно удалить, если не используете такие сценарии.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.PowerAutomateDesktop", "storeId": "9NFTCH6J7FHV" } ]
     },
@@ -138,25 +138,25 @@
     {
       "id": "apps.quick-assist",
       "title": "Быстрая помощь (Quick Assist)",
-      "description": "Удалённое подключение к ПК для помощи. Мошенники часто просят открыть именно его. Удаляйте, если не пользуетесь.",
+      "description": "Удалённая помощь с доступом к ПК. Её также используют мошенники. Удаляйте, если не пользуетесь.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "MicrosoftCorporationII.QuickAssist", "storeId": "9P7BP5VNWKX5" } ]
     },
     {
       "id": "apps.copilot",
       "title": "Copilot",
-      "description": "ИИ-ассистент Microsoft. Работает через интернет; если не пользуетесь, его можно убрать вместе с кнопкой на панели задач.",
+      "description": "ИИ-ассистент Microsoft через интернет. Можно удалить вместе с кнопкой на панели задач.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.Copilot", "storeId": "9NHT9RB2F4HD" } ]
     },
     {
       "id": "apps.dev-home",
       "title": "Dev Home",
-      "description": "Панель для разработчиков. Microsoft прекратила её развитие, обычным пользователям она не нужна.",
+      "description": "Панель для разработчиков. Поддержка Microsoft прекращена.",
       "risk": "Caution",
-      "warning": "Автоматический возврат недоступен. Microsoft прекратила поддержку Dev Home; для ручной установки доступны архивные выпуски.",
+      "warning": "Автовозврата нет. Для ручной установки доступны архивные выпуски.",
       "restoreHelpUrl": "https://github.com/microsoft/devhome/releases",
-      "restoreHelpText": "Microsoft прекратила поддержку Dev Home в мае 2025 года. Архивные установщики опубликованы в официальном репозитории Microsoft; версия может отличаться от удалённой. После ручной установки нажмите «Проверить возврат». Пока наличие приложения не подтверждено, запись останется в истории.",
+      "restoreHelpText": "Поддержка прекращена в мае 2025 года. Установите архивный выпуск из репозитория Microsoft и нажмите «Проверить возврат». Версия может отличаться; без подтверждения запись останется в истории.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.Windows.DevHome" } ]
     },
@@ -165,7 +165,7 @@
       "title": "Кортана",
       "description": "Старый голосовой помощник, который Microsoft уже закрыла. Не работает, но может оставаться в системе.",
       "risk": "Caution",
-      "warning": "Автоматический возврат не предусмотрен. Удаляйте, только если приложение больше не понадобится.",
+      "warning": "Автовозврата нет. Удаляйте, если приложение больше не понадобится.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.549981C3F5F10" } ]
     },
@@ -174,7 +174,7 @@
       "title": "Skype",
       "description": "Мессенджер Microsoft, закрытый в 2025 году. Если остался в системе — можно удалять.",
       "risk": "Caution",
-      "warning": "Автоматический возврат не предусмотрен. Удаляйте, только если приложение больше не понадобится.",
+      "warning": "Автовозврата нет. Удаляйте, если приложение больше не понадобится.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.SkypeApp" } ]
     },
@@ -188,23 +188,23 @@
     {
       "id": "apps.mixed-reality",
       "title": "Портал смешанной реальности",
-      "description": "Нужен только для VR-шлемов Windows Mixed Reality, поддержку которых Microsoft прекратила.",
+      "description": "Приложение для VR-шлемов Windows Mixed Reality. Поддержка прекращена.",
       "risk": "Caution",
-      "warning": "Автоматический возврат не предусмотрен. Удаление лишит старые совместимые VR-шлемы этого приложения.",
+      "warning": "Автовозврата нет. После удаления старые совместимые VR-шлемы лишатся этого приложения.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MixedReality.Portal" } ]
     },
     {
       "id": "apps.phone-link",
       "title": "Связь с телефоном (Phone Link)",
-      "description": "Уведомления, звонки и SMS со смартфона на ПК. Работает в фоне. Удаляйте, только если не связываете телефон с компьютером.",
+      "description": "Звонки, SMS и уведомления смартфона на ПК; работает в фоне. Удаляйте, если не связываете устройства.",
       "risk": "Caution",
       "actions": [ { "type": "appx", "package": "Microsoft.YourPhone", "storeId": "9NMPJ99VJBWV" } ]
     },
     {
       "id": "apps.media-player",
       "title": "Медиаплеер",
-      "description": "Стандартный проигрыватель музыки и видео Windows 11. Удаляйте, только если у вас есть другой плеер (например, VLC).",
+      "description": "Музыка и видео в Windows 11. Удаляйте, если есть другой плеер, например VLC.",
       "risk": "Caution",
       "actions": [ { "type": "appx", "package": "Microsoft.ZuneMusic", "storeId": "9WZDNCRFJ3PT" } ]
     },
@@ -218,7 +218,7 @@
     {
       "id": "apps.web-experience",
       "title": "Пакет виджетов (Web Experience Pack)",
-      "description": "Компонент, на котором работают виджеты. Чтобы просто убрать виджеты, достаточно твика «Отключить виджеты» в разделе «Интерфейс и фон».",
+      "description": "Компонент виджетов. Для их отключения достаточно настройки «Отключить виджеты» в «Интерфейсе и фоне».",
       "risk": "Caution",
       "actions": [ { "type": "appx", "package": "MicrosoftWindows.Client.WebExperience", "storeId": "9MSSGKG348SP" } ]
     },
@@ -226,7 +226,7 @@
       "id": "apps.xbox",
       "title": "Приложение Xbox",
       "description": "Каталог Game Pass, установка и запуск игр из него, друзья Xbox.",
-      "warning": "Без приложения Xbox не установить и не обновить игры из Game Pass для ПК. Удаляйте, только если не пользуетесь Game Pass.",
+      "warning": "Без Xbox недоступны установка и обновление игр Game Pass для ПК. Оставьте, если используете Game Pass.",
       "risk": "Advanced",
       "actions": [ { "type": "appx", "package": "Microsoft.GamingApp", "storeId": "9MV0B5HZVK9Z" } ]
     },
@@ -234,7 +234,7 @@
       "id": "apps.xbox-game-bar",
       "title": "Xbox Game Bar",
       "description": "Оверлей по Win+G: запись экрана, счётчик FPS, чат Xbox.",
-      "warning": "Пропадут запись игр по Win+Alt+R, оверлей Win+G и счётчик производительности. Некоторые игры из Microsoft Store используют Game Bar для приглашений и достижений.",
+      "warning": "Пропадут Win+G, запись Win+Alt+R и счётчики производительности. В некоторых играх Store затронутся приглашения и достижения.",
       "risk": "Advanced",
       "actions": [ { "type": "appx", "package": "Microsoft.XboxGamingOverlay", "storeId": "9NZKPSTSNW4P" } ]
     }

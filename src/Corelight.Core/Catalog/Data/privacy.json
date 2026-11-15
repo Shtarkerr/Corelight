@@ -5,7 +5,7 @@
     {
       "id": "privacy.telemetry-level",
       "title": "Минимальный уровень телеметрии",
-      "description": "Снижает объём диагностических данных, которые Windows отправляет в Microsoft, до минимума, разрешённого вашей редакцией. На Home и Pro это уровень «обязательные данные».",
+      "description": "Снижает диагностику до минимума вашей редакции Windows. В Home и Pro остаются обязательные данные.",
       "recommended": true,
       "actions": [
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "name": "AllowTelemetry", "value": "0" },
@@ -15,7 +15,7 @@
     {
       "id": "privacy.diagtrack",
       "title": "Отключить службу телеметрии",
-      "description": "Служба «Функциональные возможности для подключённых пользователей и телеметрия» (DiagTrack) и служба маршрутизации push-сообщений собирают и отправляют данные об использовании системы. Периодически нагружают диск и сеть.",
+      "description": "Службы DiagTrack и push-маршрутизации отправляют данные об использовании Windows, периодически нагружая диск и сеть.",
       "recommended": true,
       "impact": "Medium",
       "actions": [
@@ -26,7 +26,7 @@
     {
       "id": "privacy.ceip-tasks",
       "title": "Отключить задачи сбора данных",
-      "description": "Задачи планировщика программы улучшения качества и проверки совместимости (Compatibility Appraiser и др.). Они запускаются в фоне и могут на минуты загрузить процессор и диск, вызывая фризы в играх.",
+      "description": "Отключает фоновые задачи сбора данных и проверки совместимости (включая Compatibility Appraiser). Они могут нагружать CPU и диск, вызывая фризы.",
       "recommended": true,
       "impact": "Medium",
       "actions": [
@@ -45,7 +45,7 @@
     {
       "id": "privacy.error-reporting",
       "title": "Отключить отчёты об ошибках Windows",
-      "description": "После каждого сбоя программы Windows собирает дамп и отправляет его в Microsoft. На стабильность самих программ это не влияет.",
+      "description": "Отключает сбор и отправку дампов сбоев в Microsoft. Стабильность программ не меняется.",
       "recommended": true,
       "actions": [
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting", "name": "Disabled", "value": "1" },
@@ -74,7 +74,7 @@
     {
       "id": "privacy.activity-history",
       "title": "Отключить журнал действий",
-      "description": "Windows записывает, какие файлы, сайты и приложения вы открывали. Сейчас эти данные почти нигде не используются.",
+      "description": "Отключает историю открытых файлов, сайтов и приложений. Сейчас она почти не используется.",
       "recommended": true,
       "actions": [
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System", "name": "EnableActivityFeed", "value": "0" },
@@ -95,7 +95,7 @@
     {
       "id": "privacy.recall",
       "title": "Отключить Recall (снимки экрана ИИ)",
-      "description": "Функция Copilot+ PC, которая регулярно делает снимки экрана и индексирует их для поиска. Расходует ресурсы и место на диске.",
+      "description": "Отключает снимки экрана для поиска в Copilot+ PC, сокращая фоновую нагрузку и расход места.",
       "recommended": true,
       "minBuild": 26100,
       "actions": [
@@ -106,7 +106,7 @@
     {
       "id": "privacy.bing-search",
       "title": "Убрать поиск Bing из меню «Пуск»",
-      "description": "Поиск в «Пуске» будет искать только на компьютере, без отправки запросов в Bing. Работает быстрее и не показывает веб-результаты.",
+      "description": "Поиск в «Пуске» станет локальным: без запросов в Bing и веб-результатов, с меньшей задержкой.",
       "recommended": true,
       "requiresReboot": true,
       "actions": [
@@ -118,7 +118,7 @@
       "id": "privacy.location",
       "title": "Отключить службу геолокации",
       "description": "Служба определения местоположения для приложений.",
-      "warning": "Перестанут работать определение местоположения в погоде и картах, автоматический часовой пояс и функция «Поиск устройства».",
+      "warning": "Пропадут геолокация в погоде и картах, автоматический часовой пояс и «Поиск устройства».",
       "risk": "Caution",
       "actions": [
         { "type": "service", "service": "lfsvc", "startType": "Disabled", "default": "Manual" }
