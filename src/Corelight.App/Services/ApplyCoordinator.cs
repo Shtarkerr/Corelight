@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Corelight.Core.Catalog;
 using Corelight.Core.SystemInfo;
 using Corelight.Core.Tweaks;
+using Corelight.Core.Platform;
 
 namespace Corelight.App.Services;
 
@@ -39,6 +40,7 @@ public sealed class ApplyCoordinator(
         var warnings = new List<string>();
         var succeeded = 0;
         var pending = 0;
+        var notStarted = 0;
 
         using (state.BeginBusy(""))
         {
@@ -48,7 +50,8 @@ public sealed class ApplyCoordinator(
                 var verb = apply ? "Применение" : "Откат";
                 if (tweak.Category == TweakCategory.Apps)
                     verb = apply ? "Удаление" : "Возврат приложения";
-                state.BusyText = tweaks.Count == 1 ? $"{verb}: {tweak.Title}…" : $"{verb} ({i + 1} из {tweaks.Count}): {tweak.Title}…";
+                var waitHint = apply && tweak.Category == TweakCategory.Apps ? "\nWindows: до 3 минут на пакет" : "";
+                state.BusyText = (tweaks.Count == 1 ? $"{verb}: {tweak.Title}…" : $"{verb} ({i + 1} из {tweaks.Count}): {tweak.Title}…") + waitHint;
 
                 try
                 {
@@ -75,13 +78,18 @@ public sealed class ApplyCoordinator(
                 {
                     log.LogError(ex, "Твик {Tweak} не {Action}", tweak.Id, apply ? "применён" : "откачен");
                     failures.Add(ex is TweakException ? ex.Message : $"{tweak.Title}: {ex.Message}");
+                    if (apply && ex is TweakException { InnerException: AppxOperationTimeoutException })
+                    {
+                        notStarted = tweaks.Count - i - 1;
+                        break;
+                    }
                 }
             }
             state.MarkSystemChanged();
         }
 
         if (failures.Count > 0 || pending > 0 || warnings.Count > 0 || showSummary)
-            await ShowSummaryAsync(apply, succeeded, pending, failures, warnings);
+            await ShowSummaryAsync(apply, succeeded, pending, notStarted, failures, warnings);
         return failures.Count == 0 && pending == 0;
     }
 
@@ -144,11 +152,12 @@ public sealed class ApplyCoordinator(
         return true;
     }
 
-    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, List<string> failures, List<string> warnings)
+    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, int notStarted, List<string> failures, List<string> warnings)
     {
         var text = new StringBuilder();
         text.AppendLine(apply ? $"Применено изменений: {succeeded}." : $"Отменено изменений: {succeeded}.");
         if (pending > 0) text.AppendLine($"Результат пока не подтверждён: {pending}.");
+        if (notStarted > 0) text.AppendLine($"Остальные изменения не запускались: {notStarted}. Проверьте состояние приложения в истории перед повторной попыткой.");
         if (failures.Count > 0)
         {
             text.AppendLine().AppendLine("Не удалось:");

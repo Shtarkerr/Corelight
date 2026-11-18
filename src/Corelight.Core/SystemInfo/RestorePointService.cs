@@ -106,7 +106,8 @@ public sealed class RestorePointService
                 _log.LogWarning("Создание точки восстановления: {Reason}", LastError);
                 return RestorePointResult.Failed;
             }
-            for (var attempt = 0; attempt < 5; attempt++)
+            // WMI can return before the new point becomes visible in the SystemRestore list.
+            for (var attempt = 0; attempt < 10; attempt++)
             {
                 ct.ThrowIfCancellationRequested();
                 var latest = _access.LatestSequenceNumber();
@@ -115,9 +116,9 @@ public sealed class RestorePointService
                     _log.LogInformation("Создание точки восстановления подтверждено: {Sequence}", latest);
                     return RestorePointResult.Created;
                 }
-                Thread.Sleep(200);
+                Thread.Sleep(500);
             }
-            LastError = "Windows завершила запрос, но новая точка восстановления не появилась. Возможно, защита системы ещё не включена.";
+            LastError = "Windows приняла запрос, но новая точка восстановления не появилась в течение 5 секунд. Проверьте защиту системы и свободное место на системном диске.";
             _log.LogWarning("{Reason}", LastError);
             return RestorePointResult.NotCreated;
         }

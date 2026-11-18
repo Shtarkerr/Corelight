@@ -5,6 +5,9 @@ using Corelight.Core.Tweaks;
 
 namespace Corelight.Core.Actions;
 
+internal sealed class RegistryWriteDeniedException(string target, Exception inner)
+    : UnauthorizedAccessException($"Windows запретила изменение «{target}». Настройка может быть защищена системой или политикой организации. Наличие прав администратора не гарантирует доступ к ней.", inner);
+
 /// <summary>Устанавливает одно значение реестра.</summary>
 public sealed class RegistryValueAction : TweakAction
 {
@@ -60,7 +63,7 @@ public sealed class RegistryValueAction : TweakAction
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException)
         {
-            throw new UnauthorizedAccessException($"Windows запретила изменение «{Describe()}». Настройка может быть защищена системой или политикой организации. Наличие прав администратора не гарантирует доступ к ней.", ex);
+            throw new RegistryWriteDeniedException(Describe(), ex);
         }
     }
 

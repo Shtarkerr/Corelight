@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Corelight.Core.Actions;
 using Corelight.Core.Backup;
 using Corelight.Core.Platform;
 
@@ -21,6 +23,8 @@ public sealed record TweakDetection(TweakState State, string? Error = null);
 
 public sealed class TweakEngine(PlatformServices platform, IBackupStore backups, ILogger<TweakEngine> log)
 {
+    private readonly ConcurrentDictionary<string, string> _blockedChanges = new();
+
     public void RefreshExternalState()
     {
         platform.Apps.Refresh();
@@ -33,6 +37,10 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
 
     public async Task<TweakDetection> DetectDetailedAsync(TweakDefinition tweak, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        if (_blockedChanges.TryGetValue(tweak.Id, out var reason))
+            return new(TweakState.Unknown, reason);
+
         var states = new List<(TweakAction Action, ActionState State)>();
         foreach (var action in tweak.Actions)
         {
@@ -83,6 +91,8 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
     public async Task<TweakResult> ApplyAsync(TweakDefinition tweak, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        if (_blockedChanges.TryGetValue(tweak.Id, out var reason))
+            throw new TweakException($"Не удалось применить «{tweak.Title}»: {reason}");
         RefreshExternalState();
         log.LogInformation("Применение твика {Tweak}", tweak.Id);
 
@@ -115,7 +125,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
                     attempted.Add(i);
                     await action.ApplyAsync(platform, ct);
                 }
-                catch (Exception ex) when (action.Optional && ex is not OperationCanceledException)
+                catch (Exception ex) when (action.Optional && ex is not (OperationCanceledException or AppxOperationTimeoutException))
                 {
                     optionalFailures.Add(i);
                     log.LogWarning(ex, "Необязательное действие {Action} твика {Tweak} не выполнено", action.Describe(), tweak.Id);
@@ -125,6 +135,16 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         }
         catch (Exception ex)
         {
+            if (ex is RegistryWriteDeniedException)
+                _blockedChanges.TryAdd(tweak.Id, ex.Message);
+
+            if (ex is AppxOperationTimeoutException)
+            {
+                // Windows may complete a deployment even after Cancel. Rolling it back now could race
+                // with that deployment; keep the original state until the user can inspect it.
+                log.LogError(ex, "Удаление приложения {Tweak} превысило время ожидания; бэкап сохранён", tweak.Id);
+                throw new TweakException($"Не удалось применить «{tweak.Title}»: {ex.Message} Исходное состояние сохранено в истории.", ex);
+            }
             log.LogError(ex, "Ошибка применения твика {Tweak}, откатываем выполненные действия", tweak.Id);
             var rollbackErrors = new List<string>();
             for (var j = attempted.Count - 1; j >= 0; j--)
@@ -160,7 +180,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         foreach (var i in attempted)
         {
             if (optionalFailures.Contains(i)) continue;
-            if (await SafeDetectAsync(tweak.Actions[i], ct) == ActionState.Applied) continue;
+            if (await ConfirmAppliedAsync(tweak.Actions[i], ct)) continue;
             unconfirmed.Add(i);
             warnings.Add($"Результат для «{tweak.Actions[i].Describe()}» пока не подтверждён. Бэкап сохранён; проверьте состояние после перезагрузки.");
             if (!tweak.Actions[i].Optional) confirmed = false;
@@ -169,6 +189,22 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         if (servicePending)
             warnings.Add("Одна из служб не остановилась сразу; для завершения отключения перезагрузите Windows.");
         return new TweakResult(warnings, confirmed, servicePending);
+    }
+
+    private async Task<bool> ConfirmAppliedAsync(TweakAction action, CancellationToken ct)
+    {
+        var detected = await SafeDetectAsync(action, ct);
+        if (action is Corelight.Core.Actions.AppxPackageAction)
+        {
+            // Windows can finish removing the package in the background after the deployment returns.
+            for (var attempt = 0; attempt < 4 && detected == ActionState.NotApplied; attempt++)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+                platform.Apps.Refresh();
+                detected = await SafeDetectAsync(action, ct);
+            }
+        }
+        return detected == ActionState.Applied;
     }
 
     public async Task RevertAsync(TweakDefinition tweak, CancellationToken ct = default)

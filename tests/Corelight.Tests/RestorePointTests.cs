@@ -48,6 +48,15 @@ public sealed class RestorePointTests
         Assert.NotNull(service.LastError);
     }
 
+    [Fact]
+    public async Task Point_that_appears_after_wmi_returns_is_confirmed()
+    {
+        var access = new RestoreAccess { ReadAttemptsBeforeVisible = 4 };
+        var service = new RestorePointService(new FakeRegistry(), NullLogger<RestorePointService>.Instance, access);
+
+        Assert.Equal(RestorePointResult.Created, await service.CreateAsync("Test"));
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -62,12 +71,23 @@ public sealed class RestorePointTests
         public uint Code { get; init; }
         public bool CreatePoint { get; init; } = true;
         public Exception? CreateError { get; init; }
+        public int ReadAttemptsBeforeVisible { get; init; }
         private uint _sequence;
-        public uint LatestSequenceNumber() => _sequence;
+        private bool _created;
+        private int _readsAfterCreate;
+        public uint LatestSequenceNumber()
+        {
+            if (_created && ++_readsAfterCreate > ReadAttemptsBeforeVisible)
+            {
+                _sequence++;
+                _created = false;
+            }
+            return _sequence;
+        }
         public uint Create(string description)
         {
             if (CreateError is not null) throw CreateError;
-            if (Code == 0 && CreatePoint) _sequence++;
+            if (Code == 0 && CreatePoint) _created = true;
             return Code;
         }
         public uint Enable(string drive) => 0;

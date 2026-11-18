@@ -30,6 +30,8 @@
       "title": "Новости (Microsoft News)",
       "description": "Лента новостей от MSN. Периодически обновляет контент в фоне.",
       "availabilityNote": "В России возврат может быть недоступен. VPN не гарантирует установку: важен регион Windows и Store.",
+      "risk": "Caution",
+      "warning": "Удаляйте, только если приложение вам не понадобится.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.BingNews", "storeId": "9WZDNCRFHVFW" } ]
     },
@@ -63,6 +65,8 @@
       "title": "Microsoft Solitaire Collection",
       "description": "Сборник карточных игр с рекламой и онлайн-функциями.",
       "availabilityNote": "Если автовозврат не сработал, установите через «Открыть в Store» и повторите откат. Приложение может быть доступно в Store.",
+      "risk": "Caution",
+      "warning": "Удаляйте, только если приложение вам не понадобится.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftSolitaireCollection", "storeId": "9WZDNCRFHWD2" } ]
     },
@@ -92,6 +96,8 @@
       "title": "Microsoft 365 (Office)",
       "description": "Доступ к облачному Office и подписке Microsoft 365. Установленные Word и Excel не затрагиваются.",
       "availabilityNote": "В России возврат может быть недоступен. VPN не гарантирует установку: важен регион Windows и Store.",
+      "risk": "Caution",
+      "warning": "Удаляйте, только если приложение вам не понадобится.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftOfficeHub", "storeId": "9WZDNCRD29V9" } ]
     },

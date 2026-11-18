@@ -87,17 +87,37 @@ internal sealed class FakeTasks : IScheduledTaskControl
 
 internal sealed class FakeApps : IAppxControl
 {
+    private readonly HashSet<string> _pendingRemovals = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> Installed { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> Provisioned { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool DenyProvisioning { get; set; }
     public List<string> StoreInstalls { get; } = [];
     public Dictionary<string, string> StorePackages { get; } = [];
 
-    public void Refresh() { }
+    public bool DelayRemovalUntilRefresh { get; set; }
 
-    public bool IsInstalled(string packageName) => Installed.Contains(packageName);
+    public void Refresh()
+    {
+        Installed.ExceptWith(_pendingRemovals);
+        _pendingRemovals.Clear();
+    }
+
+    public bool IsInstalled(string packageName) => Installed.Contains(packageName) || Provisioned.ContainsKey(packageName);
+
+    public string? GetProvisionedFamily(string packageName) => Provisioned.GetValueOrDefault(packageName);
+
+    public Task ProvisionAsync(string packageName, string familyName, CancellationToken ct = default)
+    {
+        if (DenyProvisioning) throw new InvalidOperationException("Provisioning denied");
+        Provisioned[packageName] = familyName;
+        return Task.CompletedTask;
+    }
 
     public Task RemoveAsync(string packageName, CancellationToken ct = default)
     {
-        Installed.Remove(packageName);
+        Provisioned.Remove(packageName);
+        if (DelayRemovalUntilRefresh) _pendingRemovals.Add(packageName);
+        else Installed.Remove(packageName);
         return Task.CompletedTask;
     }
 

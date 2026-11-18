@@ -47,7 +47,13 @@ public class ScanningTests
             Assert.Contains("AllowNewsAndInterests", error.Message);
             Assert.Equal("1", sys.Registry.GetValue(path, "AllowNewsAndInterests")!.Data);
             Assert.Null(sys.Backups.Get(tweak.Id));
-            Assert.False(new TweakStatus(tweak, TweakState.NotApplied, null, true).IsPreselected);
+            Assert.False(new TweakStatus(tweak, TweakState.NotApplied, null, tweak.Recommended).IsSuggestion);
+            var detection = await engine.DetectDetailedAsync(tweak);
+            Assert.Equal(TweakState.Unknown, detection.State);
+            Assert.Contains("Windows запретила", detection.Error);
+            sys.Registry.DenyWrites = false;
+            await Assert.ThrowsAsync<TweakException>(() => engine.ApplyAsync(tweak));
+            Assert.Equal("1", sys.Registry.GetValue(path, "AllowNewsAndInterests")!.Data);
         }
     }
 

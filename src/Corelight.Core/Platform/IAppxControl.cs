@@ -16,10 +16,19 @@ public interface IAppxControl
 
     /// <summary>Устанавливает приложение заново через winget из Microsoft Store.</summary>
     Task InstallFromStoreAsync(string storeId, CancellationToken ct = default);
+
+    string? GetProvisionedFamily(string packageName) => null;
+
+    Task ProvisionAsync(string packageName, string familyName, CancellationToken ct = default) =>
+        throw new NotSupportedException("Восстановление предустановки пакета недоступно.");
 }
+
+public sealed class AppxOperationTimeoutException(string packageName, Exception inner, string operation = "удаляет")
+    : TimeoutException($"Windows слишком долго {operation} пакет {packageName}. Запрошена отмена; проверьте состояние приложения в разделе «История и откат» перед повторной попыткой.", inner);
 
 public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsAppxControl> log) : IAppxControl
 {
+    private static readonly TimeSpan DeploymentTimeout = TimeSpan.FromMinutes(3);
     private readonly PackageManager _pm = new();
     private readonly Lock _gate = new();
     private HashSet<string>? _installed;
@@ -32,6 +41,31 @@ public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsApp
         {
             _installed ??= LoadInstalledNames();
             return _installed.Contains(packageName);
+        }
+    }
+
+    public string? GetProvisionedFamily(string packageName) => _pm.FindProvisionedPackages()
+        .Where(p => string.Equals(p.Id.Name, packageName, StringComparison.OrdinalIgnoreCase))
+        .Select(p => p.Id.FamilyName)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .SingleOrDefault();
+
+    public async Task ProvisionAsync(string packageName, string familyName, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (string.Equals(GetProvisionedFamily(packageName), familyName, StringComparison.OrdinalIgnoreCase)) return;
+        if (!_pm.FindPackages().Any(p => string.Equals(p.Id.Name, packageName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(p.Id.FamilyName, familyName, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Исходное семейство пакета не найдено после установки. Предустановка не восстановлена.");
+
+        try
+        {
+            log.LogInformation("Возврат предустановки пакета {Family}", familyName);
+            await WaitForDeploymentAsync(_pm.ProvisionPackageForAllUsersAsync(familyName), familyName, ct, "восстанавливает");
+        }
+        finally
+        {
+            Invalidate();
         }
     }
 
@@ -49,7 +83,7 @@ public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsApp
             {
                 ct.ThrowIfCancellationRequested();
                 log.LogInformation("Удаление пакета {Package}", fullName);
-                await _pm.RemovePackageAsync(fullName, RemovalOptions.RemoveForAllUsers);
+                await WaitForDeploymentAsync(_pm.RemovePackageAsync(fullName, RemovalOptions.RemoveForAllUsers), fullName, ct);
             }
 
             var provisioned = _pm.FindProvisionedPackages()
@@ -61,12 +95,35 @@ public sealed class WindowsAppxControl(IProcessRunner runner, ILogger<WindowsApp
             {
                 ct.ThrowIfCancellationRequested();
                 log.LogInformation("Снятие подготовки пакета {Family}", family);
-                await _pm.DeprovisionPackageForAllUsersAsync(family);
+                await WaitForDeploymentAsync(_pm.DeprovisionPackageForAllUsersAsync(family), family, ct);
             }
         }
         finally
         {
             Invalidate();
+        }
+    }
+
+    private async Task WaitForDeploymentAsync(
+        Windows.Foundation.IAsyncOperationWithProgress<DeploymentResult, DeploymentProgress> operation,
+        string packageName, CancellationToken ct, string verb = "удаляет")
+    {
+        // WinRT may keep working after the wait ends. The engine must retain its backup on timeout.
+        static async Task<DeploymentResult> AwaitOperationAsync(Windows.Foundation.IAsyncOperationWithProgress<DeploymentResult, DeploymentProgress> pending)
+            => await pending;
+
+        try
+        {
+            var result = await AwaitOperationAsync(operation).WaitAsync(DeploymentTimeout, ct);
+            if (result.ExtendedErrorCode is { HResult: < 0 } error)
+                throw new InvalidOperationException($"Операция AppX для пакета {packageName} завершилась ошибкой: {result.ErrorText}", error);
+        }
+        catch (TimeoutException ex)
+        {
+            try { operation.Cancel(); }
+            catch (Exception cancelEx) { log.LogWarning(cancelEx, "Не удалось отменить операцию AppX для {Package}", packageName); }
+            log.LogError(ex, "Windows {Verb} пакет {Package} дольше {Timeout}", verb, packageName, DeploymentTimeout);
+            throw new AppxOperationTimeoutException(packageName, ex, verb);
         }
     }
 
