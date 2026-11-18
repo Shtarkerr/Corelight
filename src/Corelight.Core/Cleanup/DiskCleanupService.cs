@@ -8,13 +8,16 @@ public sealed class DiskCleanupService
     private readonly IReadOnlyList<CleanupRule> _rules;
     private readonly ICleanupShell _shell;
     private readonly ILogger<DiskCleanupService> _log;
+    private readonly Func<string?>? _getDownloadsPath;
     private readonly SemaphoreSlim _gate = new(1);
     private CleanupScan? _lastScan;
     public IReadOnlyList<CleanupCategory> Categories => CleanupCatalog.Categories;
 
-    public DiskCleanupService(ILogger<DiskCleanupService> log) : this(CleanupCatalog.Rules(), new WindowsCleanupShell(), log) { }
-    internal DiskCleanupService(IReadOnlyList<CleanupRule> rules, ICleanupShell shell, ILogger<DiskCleanupService> log)
-    { _rules = rules; _shell = shell; _log = log; }
+    public DiskCleanupService(ILogger<DiskCleanupService> log)
+        : this(CleanupCatalog.Rules(), new WindowsCleanupShell(), log, WindowsCleanupShell.GetDownloadsPath) { }
+    internal DiskCleanupService(IReadOnlyList<CleanupRule> rules, ICleanupShell shell, ILogger<DiskCleanupService> log,
+        Func<string?>? getDownloadsPath = null)
+    { _rules = rules; _shell = shell; _log = log; _getDownloadsPath = getDownloadsPath; }
 
     public async Task<CleanupScan> AnalyzeAsync(IProgress<string>? progress = null, CancellationToken ct = default)
     {
@@ -32,7 +35,16 @@ public sealed class DiskCleanupService
         var files = new List<CleanupFile>(); var issues = new List<CleanupIssue>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow;
-        foreach (var rule in _rules)
+        IEnumerable<CleanupRule> rules = _rules;
+        try
+        {
+            if (GetDownloadsRule() is { } downloads) rules = rules.Append(downloads);
+        }
+        catch (Exception ex) when (IsFileError(ex) || ex is System.Runtime.InteropServices.COMException)
+        {
+            AddIssue(issues, "Загрузки", ex.Message);
+        }
+        foreach (var rule in rules)
         {
             ct.ThrowIfCancellationRequested();
             progress?.Report(Categories.First(c => c.Id == rule.CategoryId).Title);
@@ -89,11 +101,17 @@ public sealed class DiskCleanupService
             var selected = selectedCategories.ToHashSet(StringComparer.Ordinal);
             if (selected.Except(Categories.Select(c => c.Id)).Any()) throw new ArgumentException("Неизвестная категория очистки.");
             if (selected.Contains("recycle-bin") && scan.RecycleBin is null) throw new InvalidOperationException("Корзина не проверена. Снимите её выбор или повторите анализ.");
+            if (selected.Contains(CleanupCatalog.DownloadsId) && scan.Files.FirstOrDefault(f =>
+                    f.CategoryId == CleanupCatalog.DownloadsId && excludedPaths?.Contains(f.Path) != true) is { } download &&
+                !string.Equals(GetDownloadsRule()?.Root, download.Rule.Root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Расположение папки «Загрузки» изменилось. Повторите анализ.");
             _lastScan = null; // Один подтверждённый анализ разрешает только одну попытку очистки.
             return await Task.Run(() => Clean(scan, selected, excludedPaths, progress, ct), CancellationToken.None);
         }
         finally { _gate.Release(); }
     }
+
+    private CleanupRule? GetDownloadsRule() => CleanupCatalog.DownloadsRule(_getDownloadsPath?.Invoke(), _rules);
 
     private CleanupResult Clean(CleanupScan scan, HashSet<string> selected, IReadOnlySet<string>? excluded, IProgress<string>? progress, CancellationToken ct)
     {

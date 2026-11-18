@@ -13,6 +13,8 @@ internal interface ICleanupShell
 
 internal sealed class WindowsCleanupShell : ICleanupShell
 {
+    internal static string? GetDownloadsPath() => Windows.Storage.UserDataPaths.GetDefault().Downloads;
+
     public string? BrokenShortcutTarget(string path)
     {
         // Рекламируемые MSI-ярлыки могут не иметь обычного файла-цели; их не удаляем.

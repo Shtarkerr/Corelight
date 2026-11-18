@@ -7,11 +7,14 @@ namespace Corelight.Tests;
 public sealed class CleanupTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "Corelight-cleanup-" + Guid.NewGuid().ToString("N"));
+    private string? _downloadsRoot;
+    private string? _downloadsPath;
     private readonly FakeShell _shell = new();
     private string Temp => Path.Combine(_root, "Temp");
     private string Cache => Path.Combine(_root, "Cache");
+    private string Downloads => Path.Combine(_downloadsRoot ??= Path.Combine(AppContext.BaseDirectory, "Corelight-cleanup-" + Guid.NewGuid().ToString("N")), "Downloads");
     private DiskCleanupService Service(params CleanupRule[] rules) => new(rules.Length == 0
-        ? [new("user-temp", Temp, TimeSpan.FromDays(7)), new("shaders", Cache, TimeSpan.FromDays(1))] : rules, _shell, NullLogger<DiskCleanupService>.Instance);
+        ? [new("user-temp", Temp, TimeSpan.FromDays(7)), new("shaders", Cache, TimeSpan.FromDays(1))] : rules, _shell, NullLogger<DiskCleanupService>.Instance, () => _downloadsPath);
 
     private string FileAt(string folder, string name, int days = 14)
     {
@@ -40,6 +43,61 @@ public sealed class CleanupTests : IDisposable
         var result = await svc.CleanAsync(scan, ["user-temp"], excludedPaths: new HashSet<string>([keep], StringComparer.OrdinalIgnoreCase));
         Assert.Equal(1, result.DeletedFiles); Assert.True(result.ReleasedBytes > 0);
         Assert.False(File.Exists(remove)); Assert.True(File.Exists(keep)); Assert.True(File.Exists(cache)); Assert.Equal(0, _shell.EmptyCalls);
+    }
+
+    [Fact]
+    public async Task Downloads_are_opt_in_and_only_reviewed_files_are_deleted()
+    {
+        _downloadsPath = Downloads;
+        var nested = Path.Combine(Downloads, "nested");
+        var download = FileAt(nested, "recent.zip", 0);
+        var keep = FileAt(Downloads, "keep.txt");
+        var outside = FileAt(_downloadsRoot!, "outside.txt");
+        var svc = Service();
+
+        var scan = await svc.AnalyzeAsync();
+        Assert.False(svc.Categories.Single(c => c.Id == "downloads").DefaultSelected);
+        Assert.Equal(2, scan.Files.Count);
+        Assert.All(scan.Files, file => Assert.Equal("downloads", file.CategoryId));
+        await svc.CleanAsync(scan, svc.Categories.Where(c => c.DefaultSelected).Select(c => c.Id).ToArray());
+        Assert.True(File.Exists(download));
+
+        scan = await svc.AnalyzeAsync();
+        var added = FileAt(Downloads, "after-analysis.zip");
+        var result = await svc.CleanAsync(scan, ["downloads"], excludedPaths: new HashSet<string>([keep]));
+
+        Assert.Equal(1, result.DeletedFiles);
+        Assert.False(File.Exists(download));
+        Assert.True(Directory.Exists(nested));
+        Assert.All(new[] { keep, outside, added }, path => Assert.True(File.Exists(path)));
+    }
+
+    [Fact]
+    public async Task Downloads_moved_after_analysis_are_left_untouched()
+    {
+        _downloadsPath = Downloads;
+        var original = FileAt(Downloads, "original.zip");
+        var redirected = FileAt(Path.Combine(_downloadsRoot!, "Other"), "new-location.zip");
+        var svc = Service();
+        var scan = await svc.AnalyzeAsync();
+        Assert.Equal(original, Assert.Single(scan.Files).Path);
+        _downloadsPath = Path.GetDirectoryName(redirected);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CleanAsync(scan, ["downloads"]));
+
+        Assert.True(File.Exists(original));
+        Assert.True(File.Exists(redirected));
+    }
+
+    [Fact]
+    public async Task Downloads_redirected_to_a_drive_root_are_skipped()
+    {
+        _downloadsPath = Path.GetPathRoot(Temp);
+        var regular = FileAt(Temp, "regular.tmp");
+        var scan = await Service().AnalyzeAsync();
+
+        Assert.Equal(regular, Assert.Single(scan.Files).Path);
+        Assert.Contains(scan.Issues, issue => issue.Path == "Загрузки");
     }
 
     [Fact]
@@ -210,8 +268,14 @@ public sealed class CleanupTests : IDisposable
 
     public void Dispose()
     {
-        var full = Path.GetFullPath(_root);
-        if (!full.StartsWith(Path.GetFullPath(Path.GetTempPath()), StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(full).StartsWith("Corelight-cleanup-")) throw new InvalidOperationException("Invalid fixture path");
+        DeleteFixture(_root, Path.GetTempPath());
+        if (_downloadsRoot is not null) DeleteFixture(_downloadsRoot, AppContext.BaseDirectory);
+    }
+
+    private static void DeleteFixture(string root, string parent)
+    {
+        var full = Path.GetFullPath(root);
+        if (!CleanupFiles.IsWithin(full, parent) || !Path.GetFileName(full).StartsWith("Corelight-cleanup-")) throw new InvalidOperationException("Invalid fixture path");
         if (Directory.Exists(full)) Directory.Delete(full, true);
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "CreateHardLinkW")]

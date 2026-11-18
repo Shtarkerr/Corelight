@@ -36,15 +36,14 @@
             </Border>
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <StackPanel>
                         <TextBlock Style="{StaticResource SectionTitle}" Text="{Binding SelectedCategory.Title}"/>
                         <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding SelectedCategory.Description}" Margin="0,5,0,12"/>
                         <ui:Button Content="Открыть корзину" Command="{Binding OpenRecycleBinCommand}" Margin="0,0,0,8" HorizontalAlignment="Left"
                                    Visibility="{Binding IsRecycleBinCategory, Converter={StaticResource BoolToVisibility}}"/>
                     </StackPanel>
-                    <ui:TextBox Grid.Row="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Поиск по пути файла" Margin="0,0,0,8"/>
-                    <DataGrid Grid.Row="2" ItemsSource="{Binding VisibleFiles}" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding VisibleFiles}" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                               HeadersVisibility="Column" GridLinesVisibility="None" EnableRowVirtualization="True" EnableColumnVirtualization="True"
                               SelectionMode="Single" BorderThickness="0" Background="Transparent" RowBackground="Transparent" AlternatingRowBackground="Transparent">
                         <DataGrid.Columns>
@@ -57,7 +56,7 @@
                             <DataGridTextColumn Header="Размер" Binding="{Binding Size}" SortMemberPath="File.Bytes" Width="85" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
-                    <TextBlock Grid.Row="3" Text="{Binding DetailsHint}" Style="{StaticResource CaptionText}" Margin="0,10,0,0"/>
+                    <TextBlock Grid.Row="2" Text="{Binding DetailsHint}" Style="{StaticResource CaptionText}" Margin="0,10,0,0"/>
                 </Grid>
             </Border>
         </Grid>

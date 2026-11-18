@@ -51,7 +51,6 @@ public sealed partial class CleanupViewModel : ObservableObject
     public ObservableCollection<CleanupCategoryViewModel> Categories { get; } = [];
     [ObservableProperty] public partial CleanupCategoryViewModel? SelectedCategory { get; set; }
     [ObservableProperty] public partial IReadOnlyList<CleanupFileViewModel> VisibleFiles { get; set; } = [];
-    [ObservableProperty] public partial string SearchText { get; set; } = "";
     [ObservableProperty] public partial string Status { get; set; } = "Нажмите «Анализировать», чтобы найти файлы для очистки.";
     [ObservableProperty] public partial string SelectionSummary { get; set; } = "Ничего не выбрано";
     [ObservableProperty] public partial bool CanClean { get; set; }
@@ -60,16 +59,15 @@ public sealed partial class CleanupViewModel : ObservableObject
     [ObservableProperty] public partial bool IsRecycleBinCategory { get; set; }
 
     partial void OnSelectedCategoryChanged(CleanupCategoryViewModel? value) => UpdateVisibleFiles();
-    partial void OnSearchTextChanged(string value) => UpdateVisibleFiles();
 
     private void UpdateVisibleFiles()
     {
         var id = SelectedCategory?.Category.Id;
         IsRecycleBinCategory = id == "recycle-bin";
-        VisibleFiles = _files.Where(f => f.File.CategoryId == id && (string.IsNullOrWhiteSpace(SearchText) || f.Path.Contains(SearchText, StringComparison.OrdinalIgnoreCase))).ToArray();
+        VisibleFiles = _files.Where(f => f.File.CategoryId == id).ToArray();
         DetailsHint = id == "recycle-bin"
             ? "Корзина очищается целиком средствами Windows. Новые элементы тоже будут удалены. Проверьте её содержимое в Проводнике."
-            : _scan is null ? "Список появится после анализа." : VisibleFiles.Count == 0 ? "Подходящих файлов нет. Недавние, защищённые и облачные файлы пропускаются." : "Снимите галочки с файлов, которые хотите сохранить.";
+            : _scan is null ? "Список появится после анализа." : VisibleFiles.Count == 0 ? "Подходящих файлов нет." : "Снимите галочки с файлов, которые хотите сохранить.";
     }
 
     private void UpdateSelection()
@@ -129,6 +127,11 @@ public sealed partial class CleanupViewModel : ObservableObject
         if (!CanClean || _scan is null) return;
         var selected = Categories.Where(c => c.IsSelected).Select(c => c.Category.Id).ToArray();
         var message = SelectionSummary + ".\n\nФайлы будут удалены безвозвратно. История Corelight и точка восстановления не вернут их.";
+        if (selected.Contains("downloads"))
+        {
+            var count = _files.Count(f => f.IsSelected && f.File.CategoryId == "downloads");
+            if (count > 0) message += $"\n\nИз папки «Загрузки» будет удалено файлов: {count}.";
+        }
         if (selected.Contains("recycle-bin")) message += "\n\nКорзина будет очищена целиком на всех дисках, включая элементы, появившиеся после анализа.";
         if (!await _dialogs.ConfirmAsync("Очистить выбранное?", message, "Удалить файлы")) return;
         _cancellation = new();
