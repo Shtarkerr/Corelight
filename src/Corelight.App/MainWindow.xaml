@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     xmlns:vm="clr-namespace:Corelight.App.ViewModels"
     xmlns:views="clr-namespace:Corelight.App.Views"
@@ -40,36 +41,31 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="Corelight" />
+        <ui:TitleBar Grid.Row="0" Height="56">
+            <ui:TitleBar.Header>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="24,0,0,0">
+                    <TextBlock Text="Corelight" Style="{StaticResource SectionTitle}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <ListBox x:Name="SectionNavigation"
+                             ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
+                             Style="{StaticResource TopNavigation}"
+                             ItemContainerStyle="{StaticResource TopNavItem}"
+                             AutomationProperties.Name="Разделы Corelight"
+                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:NavItem}">
+                                <StackPanel Orientation="Horizontal" ToolTip="{Binding Title}">
+                                    <ui:SymbolIcon Symbol="{Binding Icon}" FontSize="16" Margin="0,0,8,0" />
+                                    <TextBlock Text="{Binding DisplayTitle}" VerticalAlignment="Center" FontSize="14" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </ui:TitleBar.Header>
+        </ui:TitleBar>
 
         <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="240" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <!-- Навигация -->
-            <DockPanel Grid.Column="0" Margin="8,4,4,12">
-                <ListBox
-                    ItemsSource="{Binding Items}"
-                    SelectedItem="{Binding SelectedItem}"
-                    ItemContainerStyle="{StaticResource NavItem}"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:NavItem}">
-                            <StackPanel Orientation="Horizontal" Margin="4,6">
-                                <ui:SymbolIcon Symbol="{Binding Icon}" FontSize="18" Margin="0,0,12,0" />
-                                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" FontSize="14" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
-
-            <!-- Содержимое -->
-            <Grid Grid.Column="1" Margin="4,0,0,0">
+            <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />

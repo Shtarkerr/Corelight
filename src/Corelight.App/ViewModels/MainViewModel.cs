@@ -8,7 +8,10 @@ using Corelight.Core.Platform;
 
 namespace Corelight.App.ViewModels;
 
-public sealed record NavItem(string Title, SymbolRegular Icon, object Page);
+public sealed record NavItem(string Title, SymbolRegular Icon, object Page, string? ShortTitle = null)
+{
+    public string DisplayTitle => ShortTitle ?? Title;
+}
 
 public sealed partial class MainViewModel : ObservableObject
 {
@@ -35,7 +38,7 @@ public sealed partial class MainViewModel : ObservableObject
         Items =
         [
             new NavItem("Главная", SymbolRegular.Home24, home),
-            new NavItem("Результаты сканирования", SymbolRegular.TaskListLtr24, scan),
+            new NavItem("Результаты сканирования", SymbolRegular.TaskListLtr24, scan, "Результаты"),
             new NavItem("Расширенное", SymbolRegular.Wrench24, advanced),
             new NavItem("История и откат", SymbolRegular.History24, history),
             new NavItem("Очистка диска", SymbolRegular.Delete24, cleanup),

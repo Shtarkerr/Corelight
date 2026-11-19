@@ -24,7 +24,8 @@ try {
     [xml] $project = [IO.File]::ReadAllText((Join-Path $repoRoot 'src\Corelight.App\Corelight.App.csproj'))
     $version = @($project.Project.PropertyGroup.Version | Where-Object { $_ })[0]
     if ($version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'Неподдерживаемая версия проекта.' }
-    $revision = (& git rev-parse HEAD).Trim()
+    # Inno Setup ограничивает текстовую версию продукта 50 символами.
+    $revision = (& git rev-parse --short=16 HEAD).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'Не удалось прочитать ревизию Git.' }
     $changes = & git status --porcelain
     if ($LASTEXITCODE -ne 0) { throw 'Не удалось прочитать состояние Git.' }
@@ -34,19 +35,21 @@ try {
         $suffix = '-local'
         Write-Warning 'Есть незакоммиченные изменения: пакеты отмечены local, версия в журнале — dirty.'
     }
+    if ("$version+$revision".Length -gt 50) { throw 'Версия сборки слишком длинная для метаданных установщика.' }
     $packageRoot = Join-Path $repoRoot "publish\packages\$version$suffix"
     $appDir = Join-Path $packageRoot 'app'
     New-Item -ItemType Directory -Path $appDir -Force | Out-Null
     & dotnet publish src/Corelight.App -c Release -o $appDir -warnaserror "-p:SourceRevisionId=$revision"
     if ($LASTEXITCODE -ne 0) { throw 'Публикация Corelight не выполнена.' }
     $exe = Join-Path $appDir 'Corelight.exe'
-    if ((Get-Item -LiteralPath $exe).VersionInfo.ProductVersion -ne "$version+$revision") { throw 'Версия exe не соответствует сборке.' }
+    $appVersionInfo = (Get-Item -LiteralPath $exe).VersionInfo
+    if ($appVersionInfo.ProductVersion -ne "$version+$revision") { throw 'Версия exe не соответствует сборке.' }
     $stem = "Corelight-$version$suffix"
     $readme = @"
 Corelight $version$suffix — Windows 11 x64
 
 Установщик: запустите $stem-Setup-win-x64.exe и следуйте подсказкам.
-Переносной вариант: распакуйте ZIP целиком и запустите Corelight.exe.
+Переносной вариант: запустите $stem-Portable-win-x64.exe.
 .NET включён. Для запуска нужны права администратора.
 
 Сканирование не применяет изменения. Перед применением прочитайте предупреждения.
@@ -58,17 +61,31 @@ Corelight $version$suffix — Windows 11 x64
 Версия для журнала: $version+$revision
 "@
     [IO.File]::WriteAllText((Join-Path $appDir 'README.txt'), $readme, [Text.UTF8Encoding]::new($false))
-    & $IsccPath "/DAppVersion=$version$suffix" "/DSourceDir=$appDir" "/DPackageDir=$packageRoot" "/DPackageName=$stem-Setup-win-x64" (Join-Path $repoRoot 'installer\Corelight.iss')
+    $installerArgs = @(
+        "/DAppVersion=$version$suffix"
+        "/DBinaryVersion=$($appVersionInfo.FileVersion)"
+        "/DProductTextVersion=$($appVersionInfo.ProductVersion)"
+        "/DSourceDir=$appDir"
+        "/DPackageDir=$packageRoot"
+        "/DPackageName=$stem-Setup-win-x64"
+        (Join-Path $repoRoot 'installer\Corelight.iss')
+    )
+    & $IsccPath @installerArgs
     if ($LASTEXITCODE -ne 0) { throw 'Сборка установщика не выполнена.' }
     $setup = Join-Path $packageRoot "$stem-Setup-win-x64.exe"
-    $zip = Join-Path $packageRoot "$stem-Portable-win-x64.zip"
-    # Перезаписываем только конкретный выходной архив; каталоги и пользовательские данные не удаляем.
-    Compress-Archive -LiteralPath @($exe, (Join-Path $appDir 'LICENSE'), (Join-Path $appDir 'THIRD-PARTY-NOTICES.txt'), (Join-Path $appDir 'README.txt')) -DestinationPath $zip -Force
-    $checksums = foreach ($file in @($setup, $zip)) {
+    $setupVersionInfo = (Get-Item -LiteralPath $setup).VersionInfo
+    if ($setupVersionInfo.ProductName.TrimEnd() -ne $appVersionInfo.ProductName -or
+        $setupVersionInfo.ProductVersion.TrimEnd() -ne $appVersionInfo.ProductVersion) {
+        throw 'Метаданные установщика не соответствуют сборке Corelight.'
+    }
+    $portable = Join-Path $packageRoot "$stem-Portable-win-x64.exe"
+    Copy-Item -LiteralPath $exe -Destination $portable -Force
+    $releaseFiles = @($setup, $portable)
+    $checksums = foreach ($file in $releaseFiles) {
         $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
         "$hash  $([IO.Path]::GetFileName($file))"
     }
     [IO.File]::WriteAllLines((Join-Path $packageRoot 'SHA256SUMS.txt'), [string[]] $checksums, [Text.UTF8Encoding]::new($false))
-    Write-Output "Готовые пакеты: $packageRoot"
+    Write-Output $releaseFiles
 }
 finally { Pop-Location }

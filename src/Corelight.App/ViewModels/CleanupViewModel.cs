@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Corelight.App.Services;
 using Corelight.Core.Cleanup;
 using Microsoft.Extensions.Logging;
+using Wpf.Ui.Controls;
 
 namespace Corelight.App.ViewModels;
 
@@ -13,6 +14,18 @@ public sealed partial class CleanupCategoryViewModel(CleanupCategory category) :
     public CleanupCategory Category { get; } = category;
     public string Title => Category.Title;
     public string Description => Category.Description;
+    public SymbolRegular Icon => Category.Id switch
+    {
+        "user-temp" => SymbolRegular.Folder24,
+        "windows-temp" => SymbolRegular.Server24,
+        "thumbnails" => SymbolRegular.Image24,
+        "shaders" => SymbolRegular.Flash24,
+        "error-reports" => SymbolRegular.TaskListLtr24,
+        "shortcuts" => SymbolRegular.Link24,
+        "downloads" => SymbolRegular.ArrowDownload24,
+        "recycle-bin" => SymbolRegular.Delete24,
+        _ => SymbolRegular.Document24,
+    };
     [ObservableProperty] public partial bool IsSelected { get; set; } = category.DefaultSelected;
     [ObservableProperty] public partial string Summary { get; set; } = "Ожидает анализа";
 }
@@ -21,6 +34,7 @@ public sealed partial class CleanupFileViewModel(CleanupFile file) : ObservableO
 {
     public CleanupFile File { get; } = file;
     public string Path => File.Path;
+    public string Name => System.IO.Path.GetFileName(Path);
     public string Size => CleanupSize.Format(File.Bytes);
     [ObservableProperty] public partial bool IsSelected { get; set; } = true;
 }

@@ -2,6 +2,12 @@
 #ifndef AppVersion
   #error AppVersion must be supplied by Build-Packages.ps1
 #endif
+#ifndef BinaryVersion
+  #error BinaryVersion must be supplied by Build-Packages.ps1
+#endif
+#ifndef ProductTextVersion
+  #error ProductTextVersion must be supplied by Build-Packages.ps1
+#endif
 #ifndef SourceDir
   #error SourceDir must point to the published application
 #endif
@@ -16,6 +22,8 @@
 AppId={{13A96558-3607-43CD-AFF0-A6E1D86712FC}
 AppName=Corelight
 AppVersion={#AppVersion}
+VersionInfoVersion={#BinaryVersion}
+VersionInfoProductTextVersion={#ProductTextVersion}
 AppPublisher=Shtarkerr
 AppPublisherURL=https://github.com/Shtarkerr/Corelight
 AppSupportURL=https://github.com/Shtarkerr/Corelight/issues
