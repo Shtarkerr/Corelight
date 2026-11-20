@@ -44,9 +44,6 @@ public abstract class TweakAction
     /// <summary>Возвращает состояние из снимка, сделанного <see cref="CaptureAsync"/>.</summary>
     public abstract Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct);
 
-    /// <summary>Возвращает значение Windows по умолчанию, когда бэкапа нет (твик применён не нами).</summary>
-    public abstract Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct);
-
     /// <summary>Человекочитаемое описание цели для журнала и валидатора.</summary>
     public abstract string Describe();
 }

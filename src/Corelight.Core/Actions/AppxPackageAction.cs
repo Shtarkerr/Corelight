@@ -41,8 +41,6 @@ public sealed class AppxPackageAction : TweakAction
             await p.Apps.ProvisionAsync(Package, captured[ProvisionedPrefix.Length..], ct);
     }
 
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) => ReinstallAsync(p, ct);
-
     public override string Describe() => $"приложение {Package}";
 
     private Task ReinstallAsync(PlatformServices p, CancellationToken ct)

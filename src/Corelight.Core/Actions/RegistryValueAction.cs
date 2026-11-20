@@ -19,8 +19,6 @@ public sealed class RegistryValueAction : TweakAction
 
     public required string Value { get; init; }
 
-    /// <summary>Значение Windows по умолчанию; null — значения по умолчанию нет (удаляется).</summary>
-    public string? Default { get; init; }
     /// <summary>Действующее значение при отсутствии записи. Используется только при обнаружении.</summary>
     public string? EffectiveWhenMissing { get; init; }
     public WindowsComponent? EffectiveWhenMissingRequires { get; init; }
@@ -77,12 +75,6 @@ public sealed class RegistryValueAction : TweakAction
     public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct)
     {
         Restore(p.Registry, Path, Name, Deserialize(captured));
-        return Task.CompletedTask;
-    }
-
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct)
-    {
-        Restore(p.Registry, Path, Name, Default is null ? null : new RegValue(Kind, Default));
         return Task.CompletedTask;
     }
 

@@ -20,7 +20,5 @@ public sealed class OneDriveAction : TweakAction
     public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct) =>
         captured is null ? Task.CompletedTask : p.OneDrive.RestoreAsync(Enum.Parse<OneDriveScope>(captured), ct);
 
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) => p.OneDrive.RestoreAsync(OneDriveScope.CurrentUser, ct);
-
     public override string Describe() => "клиент синхронизации Microsoft OneDrive";
 }

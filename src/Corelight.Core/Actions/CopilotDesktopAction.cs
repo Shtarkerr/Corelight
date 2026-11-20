@@ -15,10 +15,8 @@ public sealed class CopilotDesktopAction : TweakAction
         p.CopilotDesktop?.UninstallAsync(ct) ?? throw new InvalidOperationException("Управление настольным Copilot недоступно.");
 
     public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct) =>
-        captured is null ? Task.CompletedTask : RevertToDefaultAsync(p, ct);
-
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) =>
-        throw new InvalidOperationException("Установите настольный Copilot вручную и проверьте возврат в истории Corelight.");
+        captured is null ? Task.CompletedTask
+            : throw new InvalidOperationException("Установите настольный Copilot вручную и проверьте возврат в истории Corelight.");
 
     public override string Describe() => "настольный Microsoft Copilot";
 }

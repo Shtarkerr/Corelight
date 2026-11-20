@@ -5,7 +5,7 @@ public sealed record CleanupCategory(string Id, string Title, string Description
 internal enum CleanupFilter { All, Thumbnails, Dumps, BrokenShortcuts }
 internal sealed record CleanupRule(string CategoryId, string Root, TimeSpan MinimumAge, CleanupFilter Filter = CleanupFilter.All);
 
-public sealed record CleanupFile(string CategoryId, string Path, long Bytes, DateTime LastWriteUtc)
+public sealed record CleanupFile(string CategoryId, string Path, long Bytes)
 {
     internal FileStamp Stamp { get; init; } = null!;
     internal CleanupRule Rule { get; init; } = null!;

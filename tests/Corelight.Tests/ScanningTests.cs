@@ -55,12 +55,10 @@ public class ScanningTests
             var tweak = catalog.Find(id)!;
             return new(tweak, TweakState.NotApplied, null, tweak.Recommended);
         }
-        var state = new AppState(null!)
-        {
-            LastScan = new ScanReport(new HardwareProfile(),
-                [Status("apps.outlook-new"), Status("apps.onedrive"), Status("apps.photos")])
-        };
-        var page = new ScanResultsViewModel(state, null!, null!, new NavigationService(), null!, NullLogger<ScanResultsViewModel>.Instance);
+        var state = new AppState(null!);
+        state.SetUserScan(new ScanReport(new HardwareProfile(),
+            [Status("apps.outlook-new"), Status("apps.onedrive"), Status("apps.photos")]));
+        var page = new ScanResultsViewModel(state, null!, new NavigationService(), null!, NullLogger<ScanResultsViewModel>.Instance);
 
         await page.OnNavigatedToAsync();
 
@@ -72,18 +70,16 @@ public class ScanningTests
             oneDrive =>
             {
                 Assert.Equal("apps.onedrive", oneDrive.Tweak.Id);
-                Assert.True(oneDrive.CanSelect);
                 Assert.False(oneDrive.IsSelected);
                 Assert.True(oneDrive.HasWarning);
             },
             photos =>
             {
                 Assert.Equal("apps.photos", photos.Tweak.Id);
-                Assert.True(photos.IsAdvancedOnly);
                 Assert.False(photos.IsSelected);
             });
         Assert.Equal(1, page.SelectedCount);
-        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(3, page.TotalCount);
 
         page.SelectNoneCommand.Execute(null);
         Assert.False(page.ApplyCommand.CanExecute(null));
@@ -97,14 +93,86 @@ public class ScanningTests
         Assert.True(page.IsManualExpanded);
         Assert.True(page.ManualItems[0].IsSelected);
 
-        page.SelectAllCommand.Execute(null);
+        page.SelectRecommendedCommand.Execute(null);
         Assert.Equal(2, page.SelectedCount);
         Assert.False(page.ManualItems[1].IsSelected);
+        page.ManualItems[1].IsSelected = true;
+        Assert.Equal(3, page.SelectedCount);
 
-        state.LastScan = state.LastScan! with { Statuses = state.LastScan.Statuses.ToArray() };
+        state.SetUserScan(state.LastScan!);
         await page.OnNavigatedToAsync();
         Assert.False(page.IsManualExpanded);
         Assert.Equal(1, page.SelectedCount);
+    }
+
+    [Fact]
+    public async Task Scan_page_selects_only_one_power_plan_across_the_two_lists()
+    {
+        var catalog = TweakCatalog.LoadEmbedded();
+        var high = catalog.Find("gaming.power-high")!;
+        var ultimate = catalog.Find("gaming.power-ultimate")!;
+        var state = new AppState(null!);
+        state.SetUserScan(new ScanReport(new HardwareProfile(),
+            [new(high, TweakState.NotApplied, null, true), new(ultimate, TweakState.NotApplied, null, false)]));
+        var page = new ScanResultsViewModel(state, null!, new NavigationService(), null!, NullLogger<ScanResultsViewModel>.Instance);
+        await page.OnNavigatedToAsync();
+
+        var recommended = Assert.Single(Assert.Single(page.Groups).Items);
+        var manual = Assert.Single(page.ManualItems);
+        Assert.True(recommended.IsSelected);
+        manual.IsSelected = true;
+        Assert.False(recommended.IsSelected);
+        Assert.Equal(1, page.SelectedCount);
+
+        page.SelectRecommendedCommand.Execute(null);
+        Assert.True(recommended.IsSelected);
+        Assert.False(manual.IsSelected);
+        Assert.Equal(1, page.SelectedCount);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Automatic_refresh_preserves_existing_choices_until_a_new_user_scan()
+    {
+        var sys = new TestSystem();
+        TweakDefinition Option(string id, bool recommended) => new()
+        {
+            Id = id, Title = id, Description = id, Recommended = recommended,
+            Actions = [new RegistryValueAction { Path = @"HKCU\Software\Corelight.Tests\Selections", Name = id, Value = "1" }]
+        };
+        var uncheckedItem = Option("unchecked", true);
+        var manualItem = Option("manual", false);
+        var appliedItem = Option("applied", true);
+        var engine = sys.CreateEngine();
+        var scanner = new Scanner(new TweakCatalog([uncheckedItem, manualItem, appliedItem], []), engine,
+            new HardwareProbe(sys.Registry, NullLogger<HardwareProbe>.Instance));
+        var state = new AppState(scanner);
+        state.SetUserScan(await scanner.ScanAsync(new HardwareProfile()));
+        var page = new ScanResultsViewModel(state, null!, new NavigationService(), null!, NullLogger<ScanResultsViewModel>.Instance);
+        await page.OnNavigatedToAsync();
+        var recommended = Assert.Single(page.Groups);
+        recommended.Items.Single(i => i.Tweak.Id == uncheckedItem.Id).IsSelected = false;
+        Assert.Single(page.ManualItems).IsSelected = true;
+        page.IsManualExpanded = true;
+
+        await engine.ApplyAsync(appliedItem);
+        state.MarkSystemChanged();
+        await page.OnNavigatedToAsync();
+
+        Assert.False(Assert.Single(Assert.Single(page.Groups).Items).IsSelected);
+        Assert.True(Assert.Single(page.ManualItems).IsSelected);
+        Assert.True(page.IsManualExpanded);
+
+        await engine.RevertAsync(appliedItem);
+        state.MarkSystemChanged();
+        await page.OnNavigatedToAsync();
+        Assert.All(Assert.Single(page.Groups).Items, item => Assert.False(item.IsSelected));
+
+        state.SetUserScan(await scanner.ScanAsync(new HardwareProfile()));
+        await page.OnNavigatedToAsync();
+        Assert.All(Assert.Single(page.Groups).Items, item => Assert.True(item.IsSelected));
+        Assert.False(Assert.Single(page.ManualItems).IsSelected);
+        Assert.False(page.IsManualExpanded);
     }
 
     [Fact]

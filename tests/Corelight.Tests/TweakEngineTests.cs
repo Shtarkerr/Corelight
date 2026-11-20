@@ -1,6 +1,9 @@
 using Microsoft.Win32;
 using Corelight.Core.Actions;
+using Corelight.Core.Catalog;
 using Corelight.Core.Platform;
+using Corelight.Core.Scanning;
+using Corelight.Core.SystemInfo;
 using Corelight.Core.Tweaks;
 
 namespace Corelight.Tests;
@@ -119,7 +122,7 @@ public class TweakEngineTests
     }
 
     [Fact]
-    public async Task Exclusive_group_reverts_neighbour_so_original_state_is_restored()
+    public async Task Exclusive_group_requires_explicit_rollback_before_switching()
     {
         var sys = new TestSystem();
         var engine = sys.CreateEngine();
@@ -134,15 +137,27 @@ public class TweakEngineTests
             Actions = [new PowerPlanAction { Scheme = new Guid("e9a42b02-d5df-448d-aa00-03f14749eb61"), CopyGuid = Guid.NewGuid() }],
         };
         TweakDefinition[] all = [high, ultimate];
+        var scanner = new Scanner(new TweakCatalog(all, []), engine, null!);
 
-        await engine.RevertConflictsAsync(high, all);
+        Assert.Null(engine.GetApplyConflictReason(high, all));
         await engine.ApplyAsync(high);
-        await engine.RevertConflictsAsync(ultimate, all);
-        await engine.ApplyAsync(ultimate);
 
+        Assert.Contains("История и откат", engine.GetApplyConflictReason(ultimate, all));
+        var report = await scanner.ScanAsync(new HardwareProfile());
+        var blocked = Assert.Single(report.Statuses, s => s.Tweak.Id == ultimate.Id);
+        Assert.Equal(TweakState.NotApplied, blocked.State);
+        Assert.False(blocked.CanApply);
+        Assert.Empty(report.ManualItems);
+        Assert.NotNull(sys.Backups.Get(high.Id));
+        Assert.Equal(TweakState.Applied, await engine.DetectAsync(high));
+        await engine.RevertAsync(high);
         Assert.Null(sys.Backups.Get(high.Id));
         Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(high));
 
+        Assert.Null(engine.GetApplyConflictReason(ultimate, all));
+        report = await scanner.ScanAsync(new HardwareProfile());
+        Assert.Contains(report.ManualItems, s => s.Tweak.Id == ultimate.Id);
+        await engine.ApplyAsync(ultimate);
         await engine.RevertAsync(ultimate);
         Assert.Equal(PowerPlanAction.Balanced, sys.Power.Active);
     }
@@ -260,20 +275,20 @@ public class TweakEngineTests
     }
 
     [Fact]
-    public async Task Revert_without_backup_uses_windows_default()
+    public async Task Revert_without_backup_keeps_existing_state()
     {
         var sys = new TestSystem();
-        sys.Services.StartTypes["DiagTrack"] = ServiceStartType.Disabled; // отключено до нас
+        sys.Services.StartTypes["DiagTrack"] = ServiceStartType.Disabled;
         sys.Registry.SetValue(Key, "Flag", RegValue.DWord(0));
         var engine = sys.CreateEngine();
         var tweak = TestSystem.Tweak(
-            new ServiceStartupAction { Service = "DiagTrack", Default = ServiceStartType.Automatic },
-            new RegistryValueAction { Path = Key, Name = "Flag", Value = "0", Default = "1" });
+            new ServiceStartupAction { Service = "DiagTrack" },
+            new RegistryValueAction { Path = Key, Name = "Flag", Value = "0" });
 
-        await engine.RevertAsync(tweak);
+        await Assert.ThrowsAsync<TweakException>(() => engine.RevertAsync(tweak));
 
-        Assert.Equal(ServiceStartType.Automatic, sys.Services.StartTypes["DiagTrack"]);
-        Assert.Equal("1", sys.Registry.GetValue(Key, "Flag")!.Data);
+        Assert.Equal(ServiceStartType.Disabled, sys.Services.StartTypes["DiagTrack"]);
+        Assert.Equal("0", sys.Registry.GetValue(Key, "Flag")!.Data);
     }
 
     [Fact]

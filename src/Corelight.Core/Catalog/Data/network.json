@@ -18,7 +18,7 @@
       "description": "Снимает ограничение обработки сетевых пакетов при музыке или видео. Может уменьшить скачки пинга.",
       "recommended": true,
       "actions": [
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "NetworkThrottlingIndex", "value": "0xFFFFFFFF", "default": "10", "requiredService": "MMCSS" }
+        { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "NetworkThrottlingIndex", "value": "0xFFFFFFFF", "requiredService": "MMCSS" }
       ]
     },
     {

@@ -52,17 +52,9 @@ public sealed class TcpNoDelayAction : TweakAction
         return Task.CompletedTask;
     }
 
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct)
-    {
-        foreach (var key in ActiveInterfaces(p.Registry))
-            foreach (var name in ValueNames)
-                p.Registry.DeleteValue(key, name);
-        return Task.CompletedTask;
-    }
-
     public override string Describe() => @"Tcpip\Parameters\Interfaces\*\TcpAckFrequency, TCPNoDelay";
 
-    internal static List<string> ActiveInterfaces(IRegistryAccess registry) =>
+    private static List<string> ActiveInterfaces(IRegistryAccess registry) =>
         registry.GetSubKeyNames(InterfacesKey)
             .Select(name => $@"{InterfacesKey}\{name}")
             .Where(key => HasAddress(registry.GetValue(key, "DhcpIPAddress")) || HasAddress(registry.GetValue(key, "IPAddress")))

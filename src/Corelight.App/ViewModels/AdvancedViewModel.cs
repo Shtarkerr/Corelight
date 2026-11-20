@@ -2,36 +2,20 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Corelight.App.Services;
-using Corelight.Core.Catalog;
+using Corelight.Core.Actions;
 using Corelight.Core.Scanning;
 using Corelight.Core.Startup;
 using Corelight.Core.Tweaks;
 
 namespace Corelight.App.ViewModels;
 
-public sealed class AdvancedSectionViewModel(CategoryInfo info)
+public sealed record AdvancedSectionViewModel(CategoryInfo Info, IReadOnlyList<AdvancedTweakItemViewModel> Items)
 {
-    public CategoryInfo Info { get; } = info;
     public string Title => Info.Title;
-    public ObservableCollection<object> Items { get; } = [];
     public bool IsEmpty => Items.Count == 0;
-
-    public string Hint => Info.Category switch
-    {
-        null => "Включено — автозапуск при входе. Программа не удаляется.",
-        TweakCategory.Apps => "Установленные приложения и удалённые Corelight.",
-        _ => "Включено — оптимизация применена. Выключение — откат.",
-    };
-
-    public string EmptyText => Info.Category == TweakCategory.Apps
-        ? "Предустановленных приложений из списка в системе нет."
-        : "В этом разделе ничего не найдено.";
 }
 
 public sealed partial class AdvancedViewModel(
-    TweakCatalog catalog,
-    TweakEngine engine,
-    Scanner scanner,
     StartupManager startup,
     ApplyCoordinator coordinator,
     AppState state,
@@ -43,12 +27,29 @@ public sealed partial class AdvancedViewModel(
     [ObservableProperty]
     public partial AdvancedSectionViewModel? SelectedSection { get; set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoStartupItems))]
+    public partial IReadOnlyList<StartupItemViewModel> StartupItems { get; set; } = [];
+
+    public bool HasNoStartupItems => StartupItems.Count == 0;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsPendingOptions), nameof(ShowsStartup))]
+    public partial int SelectedBlockIndex { get; set; }
+
+    public bool ShowsPendingOptions => SelectedBlockIndex == 0;
+    public bool ShowsStartup => SelectedBlockIndex == 1;
+
     public async Task OnNavigatedToAsync()
     {
         try
         {
             using (state.BeginBusy("Проверка текущих настроек…"))
-                await LoadAsync();
+            {
+                await LoadTweakSectionsAsync();
+                var items = await Task.Run(startup.GetItems);
+                StartupItems = items.Select(item => new StartupItemViewModel(item, OnStartupToggle)).ToArray();
+            }
         }
         catch (Exception ex)
         {
@@ -57,104 +58,72 @@ public sealed partial class AdvancedViewModel(
         }
     }
 
-    private async Task LoadAsync()
+    private async Task LoadTweakSectionsAsync()
     {
-        await Task.Run(engine.RefreshExternalState);
-        var hardware = await state.GetHardwareAsync();
-        var selectedTitle = SelectedSection?.Title;
-        var sections = new List<AdvancedSectionViewModel>();
-
-        foreach (var info in CategoryInfo.All)
-        {
-            var section = new AdvancedSectionViewModel(info);
-            if (info.Category is { } category)
-            {
-                var items = new List<TweakItemViewModel>();
-                foreach (var tweak in catalog.InCategory(category))
-                {
-                    var status = await scanner.EvaluateAsync(tweak, hardware);
-                    if (category == TweakCategory.Apps && status.State == TweakState.Applied && engine.Backups.Get(tweak.Id) is null)
-                        continue; // приложения нет и не было удалено нами — показывать нечего
-
-                    TweakItemViewModel item = category == TweakCategory.Apps
-                        ? new AppItemViewModel(tweak, OnToggleAsync)
-                        : new TweakItemViewModel(tweak, OnToggleAsync);
-                    item.SetStatus(status);
-                    items.Add(item);
-                }
-                // Недоступные на этом ПК пункты — в конец списка.
-                foreach (var item in items.OrderBy(i => !i.IsAvailable).ThenByDescending(i => i.Impact))
-                    section.Items.Add(item);
-            }
-            else
-            {
-                var items = await Task.Run(startup.GetItems);
-                foreach (var item in items)
-                    section.Items.Add(new StartupItemViewModel(item, OnStartupToggle));
-            }
-            sections.Add(section);
-        }
-
-        Sections.Clear();
-        foreach (var section in sections)
-            Sections.Add(section);
-        SelectedSection = Sections.FirstOrDefault(s => s.Title == selectedTitle) ?? Sections.FirstOrDefault();
-    }
-
-    private async Task OnToggleAsync(TweakItemViewModel item, bool turnOn)
-    {
-        item.IsBusy = true;
+        ScanReport report;
         try
         {
-            if (turnOn && !await ConfirmAsync(item))
+            report = await state.RefreshTweakStatusesAsync();
+        }
+        catch
+        {
+            Sections.Clear();
+            SelectedSection = null;
+            throw;
+        }
+        var pending = report.Statuses.Where(s => s.CanApply).OrderByDescending(s => s.Tweak.Impact)
+            .ToLookup(s => s.Tweak.Category);
+        var selectedCategory = SelectedSection?.Info.Category;
+
+        Sections.Clear();
+        foreach (var info in CategoryInfo.All)
+        {
+            var items = pending[info.Category].Select(s => new AdvancedTweakItemViewModel(s.Tweak, ApplyAsync)).ToArray();
+            Sections.Add(new AdvancedSectionViewModel(info, items));
+        }
+        SelectedSection = Sections.FirstOrDefault(s => s.Info.Category == selectedCategory)
+            ?? Sections.FirstOrDefault(s => !s.IsEmpty)
+            ?? Sections.FirstOrDefault();
+    }
+
+    private async Task ApplyAsync(AdvancedTweakItemViewModel item)
+    {
+        try
+        {
+            if (!await ConfirmAsync(item))
                 return;
 
-            var tweaks = new[] { item.Tweak };
-            if (turnOn)
-                await coordinator.ApplyAsync(tweaks, showSummary: false);
-            else
-                await coordinator.RevertAsync(tweaks, showSummary: false);
+            var version = state.ChangeVersion;
+            await coordinator.ApplyAsync([item.Tweak], showSummary: false);
+            if (state.ChangeVersion != version)
+            {
+                using (state.BeginBusy("Обновление списка…"))
+                    await LoadTweakSectionsAsync();
+            }
         }
         catch (Exception ex)
         {
-            log.LogError(ex, "Ошибка переключения твика {Tweak}", item.Tweak.Id);
+            log.LogError(ex, "Не удалось применить твик {Tweak}", item.Tweak.Id);
             await dialogs.ShowInfoAsync("Ошибка", ex.Message);
-        }
-        finally
-        {
-            // Показываем то, что на самом деле в системе, а не то, на что нажали. Твики той же
-            // взаимоисключающей группы тоже перечитываем: применение одного откатывает другой.
-            var group = item.Tweak.ExclusiveGroup;
-            IReadOnlyList<TweakItemViewModel> affected = group is null
-                ? [item]
-                : Sections.SelectMany(s => s.Items).OfType<TweakItemViewModel>().Where(i => i.Tweak.ExclusiveGroup == group).ToList();
-            foreach (var target in affected)
-            {
-                try
-                {
-                    target.SetStatus(await scanner.EvaluateAsync(target.Tweak, await state.GetHardwareAsync()));
-                }
-                catch (Exception ex)
-                {
-                    log.LogError(ex, "Не удалось перечитать состояние {Tweak}", target.Tweak.Id);
-                }
-            }
-            item.IsBusy = false;
         }
     }
 
-    private async Task<bool> ConfirmAsync(TweakItemViewModel item)
+    private async Task<bool> ConfirmAsync(AdvancedTweakItemViewModel item)
     {
-        var isApp = item is AppItemViewModel;
+        var isApp = item.Tweak.Category == TweakCategory.Apps;
         if (!item.HasWarning && item.Risk != TweakRisk.Advanced && !isApp)
             return true;
 
-        var text = isApp ? $"Приложение «{item.Title}» будет удалено для всех пользователей этого ПК." : item.Description;
+        var text = isApp
+            ? $"Приложение «{item.Title}» будет удалено."
+            : item.Description;
+        if (item.Tweak.Actions.OfType<AppxPackageAction>().Any())
+            text += " Изменение затронет всех пользователей этого ПК.";
         if (item.HasWarning)
             text += "\n\n" + item.Warning;
         if (item.HasAvailabilityNote)
             text += "\n\n" + item.AvailabilityNote;
-        return await dialogs.ConfirmAsync(isApp ? "Удалить приложение?" : item.Title, text, isApp ? "Удалить" : "Применить");
+        return await dialogs.ConfirmAsync(isApp ? "Удалить приложение?" : item.Title, text, item.ActionText);
     }
 
     private void OnStartupToggle(StartupItemViewModel item, bool enabled)

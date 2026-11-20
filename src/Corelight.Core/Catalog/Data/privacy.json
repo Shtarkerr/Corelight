@@ -19,8 +19,8 @@
       "recommended": true,
       "impact": "Medium",
       "actions": [
-        { "type": "service", "service": "DiagTrack", "startType": "Disabled", "default": "Automatic" },
-        { "type": "service", "service": "dmwappushservice", "startType": "Disabled", "default": "Manual", "optional": true }
+        { "type": "service", "service": "DiagTrack", "startType": "Disabled" },
+        { "type": "service", "service": "dmwappushservice", "startType": "Disabled", "optional": true }
       ]
     },
     {
@@ -49,7 +49,7 @@
       "recommended": true,
       "actions": [
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting", "name": "Disabled", "value": "1", "requiredService": "WerSvc" },
-        { "type": "service", "service": "WerSvc", "startType": "Disabled", "default": "Manual", "optional": true }
+        { "type": "service", "service": "WerSvc", "startType": "Disabled", "optional": true }
       ]
     },
     {
@@ -59,7 +59,7 @@
       "recommended": true,
       "appliedWhenAnyActionMatches": true,
       "actions": [
-        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo", "name": "Enabled", "value": "0", "default": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo", "name": "Enabled", "value": "0" },
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo", "name": "DisabledByGroupPolicy", "value": "1" }
       ]
     },
@@ -69,7 +69,7 @@
       "description": "Microsoft использует диагностические данные, чтобы показывать вам советы, рекламу и рекомендации.",
       "recommended": true,
       "actions": [
-        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy", "name": "TailoredExperiencesWithDiagnosticDataEnabled", "value": "0", "default": "1" }
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy", "name": "TailoredExperiencesWithDiagnosticDataEnabled", "value": "0" }
       ]
     },
     {
@@ -122,7 +122,7 @@
       "warning": "Пропадут геолокация в погоде и картах, автоматический часовой пояс и «Поиск устройства».",
       "risk": "Caution",
       "actions": [
-        { "type": "service", "service": "lfsvc", "startType": "Disabled", "default": "Manual" }
+        { "type": "service", "service": "lfsvc", "startType": "Disabled" }
       ]
     }
   ]

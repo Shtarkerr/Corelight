@@ -13,59 +13,56 @@ public sealed record ScanGroupViewModel(string Title, IReadOnlyList<ScanItemView
 
 public sealed partial class ScanResultsViewModel(
     AppState state,
-    Scanner scanner,
     ApplyCoordinator coordinator,
     NavigationService navigation,
     DialogService dialogs,
     ILogger<ScanResultsViewModel> log) : ObservableObject, INavigationAware
 {
-    private int _renderedVersion = -1;
     private ScanReport? _renderedReport;
+    private int _renderedUserScanVersion;
 
     public ObservableCollection<ScanGroupViewModel> Groups { get; } = [];
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasManualItems), nameof(HasAdvancedOnlyItems), nameof(ManualItemsHeader))]
+    [NotifyPropertyChangedFor(nameof(HasNoManualItems), nameof(ManualItemsHeader))]
     public partial IReadOnlyList<ScanItemViewModel> ManualItems { get; set; } = [];
 
     [ObservableProperty]
     public partial bool IsManualExpanded { get; set; }
 
-    public bool HasManualItems => ManualItems.Count > 0;
-    public bool HasAdvancedOnlyItems => ManualItems.Any(i => i.IsAdvancedOnly);
+    public bool HasNoManualItems => ManualItems.Count == 0;
+    public bool HasRecommendedItems => Groups.Count > 0;
+    public bool HasNoRecommendedItems => !HasRecommendedItems;
     public string ManualItemsHeader
     {
         get
         {
-            var selected = ManualItems.Count(i => i.CanSelect && i.IsSelected);
+            var selected = ManualItems.Count(i => i.IsSelected);
             return selected == 0 ? $"Для ручной настройки ({ManualItems.Count})"
                 : $"Для ручной настройки ({ManualItems.Count}, выбрано {selected})";
         }
     }
 
-    private IEnumerable<ScanItemViewModel> SelectableItems =>
-        Groups.SelectMany(g => g.Items).Concat(ManualItems.Where(i => i.CanSelect));
+    private IEnumerable<ScanItemViewModel> RecommendedItems => Groups.SelectMany(g => g.Items);
+    private IEnumerable<ScanItemViewModel> SelectableItems => RecommendedItems.Concat(ManualItems);
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoSuggestions), nameof(HasNoScan))]
+    [NotifyPropertyChangedFor(nameof(HasNoScan))]
     public partial bool HasScan { get; set; }
 
     public bool HasNoScan => !HasScan;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoSuggestions))]
     public partial int TotalCount { get; set; }
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyCommand))]
     public partial int SelectedCount { get; set; }
 
-    public bool HasNoSuggestions => HasScan && TotalCount == 0;
-
     public async Task OnNavigatedToAsync()
     {
         // Если систему меняли в других разделах, пересканируем, чтобы не предлагать уже применённое.
-        if (state.LastScan is not null && _renderedVersion != -1 && _renderedVersion != state.ChangeVersion)
+        if (state.NeedsScanRefresh)
             await RescanAsync();
         Rebuild();
     }
@@ -74,13 +71,18 @@ public sealed partial class ScanResultsViewModel(
     private void GoHome() => navigation.NavigateTo<HomeViewModel>();
 
     [RelayCommand]
-    private void OpenAdvanced() => navigation.NavigateTo<AdvancedViewModel>();
+    private void SelectRecommended()
+    {
+        foreach (var item in RecommendedItems)
+            item.IsSelected = true;
+    }
 
     [RelayCommand]
-    private void SelectAll() => SetAll(true);
-
-    [RelayCommand]
-    private void SelectNone() => SetAll(false);
+    private void SelectNone()
+    {
+        foreach (var item in SelectableItems)
+            item.IsSelected = false;
+    }
 
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
@@ -111,34 +113,41 @@ public sealed partial class ScanResultsViewModel(
         try
         {
             using (state.BeginBusy("Обновление результатов…"))
-                state.LastScan = await scanner.ScanAsync(await state.GetHardwareAsync());
+                await state.RefreshTweakStatusesAsync();
         }
         catch (Exception ex)
         {
             log.LogError(ex, "Ошибка повторного сканирования");
+            state.ClearLastScan();
         }
     }
 
     private void Rebuild()
     {
         var report = state.LastScan;
-        if (_renderedVersion == state.ChangeVersion && ReferenceEquals(report, _renderedReport))
+        var sameUserScan = _renderedUserScanVersion == state.UserScanVersion;
+        if (ReferenceEquals(report, _renderedReport) && sameUserScan)
             return;
+
+        var selection = sameUserScan && _renderedReport is not null && report is not null
+            ? SelectableItems.Where(i => i.IsSelected).Select(i => i.Tweak.Id).ToHashSet(StringComparer.Ordinal)
+            : null;
+        ScanItemViewModel CreateItem(TweakStatus status) => new(status, selection?.Contains(status.Tweak.Id));
 
         foreach (var item in SelectableItems)
             item.PropertyChanged -= OnItemChanged;
         Groups.Clear();
 
         _renderedReport = report;
-        _renderedVersion = state.ChangeVersion;
+        _renderedUserScanVersion = state.UserScanVersion;
         HasScan = report is not null;
-        IsManualExpanded = false;
-        ManualItems = report?.ManualItems.Select(s => new ScanItemViewModel(s)).ToArray() ?? [];
+        if (selection is null) IsManualExpanded = false;
+        ManualItems = report?.ManualItems.Select(CreateItem).ToArray() ?? [];
         if (report is not null)
         {
-            foreach (var group in report.Suggestions.Where(s => s.IsPreselected).GroupBy(s => s.Tweak.Impact))
+            foreach (var group in report.RecommendedItems.GroupBy(s => s.Tweak.Impact))
             {
-                var items = group.Select(s => new ScanItemViewModel(s)).ToList();
+                var items = group.Select(CreateItem).ToArray();
                 var title = group.Key switch
                 {
                     TweakImpact.High => "Высокий предполагаемый эффект",
@@ -150,19 +159,20 @@ public sealed partial class ScanResultsViewModel(
         }
         foreach (var item in SelectableItems)
             item.PropertyChanged += OnItemChanged;
+        OnPropertyChanged(nameof(HasRecommendedItems));
+        OnPropertyChanged(nameof(HasNoRecommendedItems));
         UpdateCounts();
-    }
-
-    private void SetAll(bool selected)
-    {
-        foreach (var item in SelectableItems)
-            item.IsSelected = selected;
     }
 
     private void OnItemChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(ScanItemViewModel.IsSelected))
-            UpdateCounts();
+        if (e.PropertyName != nameof(ScanItemViewModel.IsSelected)) return;
+        if (sender is ScanItemViewModel { IsSelected: true, Tweak.ExclusiveGroup: { } group } selected)
+        {
+            foreach (var other in SelectableItems.Where(i => i != selected && i.Tweak.ExclusiveGroup == group))
+                other.IsSelected = false;
+        }
+        UpdateCounts();
     }
 
     private void UpdateCounts()

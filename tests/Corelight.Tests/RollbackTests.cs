@@ -147,9 +147,6 @@ public sealed class RollbackTests
             return Task.CompletedTask;
         }
 
-        public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) =>
-            throw new InvalidOperationException("The original backup must be used.");
-
         public override string Describe() => "тестовое изменение";
     }
 }

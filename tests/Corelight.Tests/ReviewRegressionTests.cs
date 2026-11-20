@@ -209,7 +209,6 @@ public sealed class ReviewRegressionTests : IDisposable
             return Task.CompletedTask;
         }
         public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct) { if (!IgnoreRevert) Value = int.Parse(captured!); return Task.CompletedTask; }
-        public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) => throw new InvalidOperationException("Should not use defaults");
         public override string Describe() => "review state";
     }
 }

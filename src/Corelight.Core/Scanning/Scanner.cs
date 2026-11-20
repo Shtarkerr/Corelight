@@ -9,9 +9,10 @@ namespace Corelight.Core.Scanning;
 public sealed record TweakStatus(TweakDefinition Tweak, TweakState State, string? UnavailableReason, bool Recommended)
 {
     public bool IsAvailable => UnavailableReason is null && State is not (TweakState.NotApplicable or TweakState.Unknown);
+    public bool CanApply => IsAvailable && State == TweakState.NotApplied;
 
     /// <summary>Что попадает в результаты сканирования: рекомендовано и ещё не применено.</summary>
-    public bool IsSuggestion => IsAvailable && Recommended && State == TweakState.NotApplied;
+    public bool IsSuggestion => CanApply && Recommended;
 
     /// <summary>Выбор каталога имеет приоритет над уровнем риска; Advanced всегда выбирается вручную.</summary>
     public bool IsPreselected => IsSuggestion && Tweak.Risk != TweakRisk.Advanced
@@ -21,8 +22,9 @@ public sealed record TweakStatus(TweakDefinition Tweak, TweakState State, string
 public sealed record ScanReport(HardwareProfile Hardware, IReadOnlyList<TweakStatus> Statuses)
 {
     public IEnumerable<TweakStatus> Suggestions => Statuses.Where(s => s.IsSuggestion).OrderByDescending(s => s.Tweak.Impact);
+    public IEnumerable<TweakStatus> RecommendedItems => Suggestions.Where(s => s.IsPreselected);
     public IEnumerable<TweakStatus> ManualItems => Statuses
-        .Where(s => s.IsAvailable && s.State == TweakState.NotApplied && !s.IsPreselected)
+        .Where(s => s.CanApply && !s.IsPreselected)
         .OrderByDescending(s => s.IsSuggestion)
         .ThenByDescending(s => s.Tweak.Impact);
 }
@@ -62,6 +64,8 @@ public sealed class Scanner(TweakCatalog catalog, TweakEngine engine, HardwarePr
             var detection = reason is null ? await engine.DetectDetailedAsync(tweak, ct) : new TweakDetection(TweakState.NotApplicable);
             if (detection.State == TweakState.Unknown)
                 reason = "Не удалось проверить состояние: " + detection.Error;
+            else if (detection.State == TweakState.NotApplied)
+                reason = engine.GetApplyConflictReason(tweak, catalog.Tweaks);
             var recommended = tweak.Recommended && tweak.RecommendWhen.All(hardware.Satisfies);
             return new TweakStatus(tweak, detection.State, reason, recommended);
         }, ct);

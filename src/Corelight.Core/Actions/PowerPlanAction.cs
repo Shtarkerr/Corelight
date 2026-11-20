@@ -46,8 +46,5 @@ public sealed class PowerPlanAction : TweakAction
         await p.Power.SetActiveSchemeAsync(schemes.Contains(target) ? target : Balanced, ct);
     }
 
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) =>
-        p.Power.SetActiveSchemeAsync(Balanced, ct);
-
     public override string Describe() => $"схема питания {Scheme}";
 }

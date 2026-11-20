@@ -13,7 +13,7 @@ public class CatalogTests
         Assert.Empty(catalog.Rejected);
         Assert.True(catalog.Tweaks.Count > 50);
         foreach (var category in Enum.GetValues<TweakCategory>())
-            Assert.NotEmpty(catalog.InCategory(category));
+            Assert.Contains(catalog.Tweaks, tweak => tweak.Category == category);
     }
 
     [Fact]

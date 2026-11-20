@@ -61,7 +61,7 @@ public sealed partial class HomeViewModel(
             {
                 Hardware = await state.RefreshHardwareAsync();
                 var progress = new Progress<double>(p => state.BusyText = $"Сканирование системы… {p:P0}");
-                state.LastScan = await scanner.ScanAsync(Hardware, progress);
+                state.SetUserScan(await scanner.ScanAsync(Hardware, progress));
             }
             UpdateSummary();
             navigation.NavigateTo<ScanResultsViewModel>();
@@ -75,18 +75,19 @@ public sealed partial class HomeViewModel(
 
     private void UpdateSummary()
     {
-        var report = state.LastScan;
+        var report = state.NeedsScanRefresh ? null : state.LastScan;
         if (report is null)
         {
             ScanSummary = null;
             return;
         }
-        var suggestions = report.Suggestions.Count();
+        var suggestions = report.RecommendedItems.Count();
+        var manual = report.ManualItems.Count();
         // Приложения не считаем: «применено» у них значит и «никогда не было в системе».
         var applied = report.Statuses.Count(s =>
             s.Recommended && s.IsAvailable && s.State == TweakState.Applied && s.Tweak.Category != TweakCategory.Apps);
-        ScanSummary = suggestions == 0
-            ? "Доступных рекомендаций не найдено. Подробности — в разделе «Расширенное»."
-            : $"Найдено рекомендаций: {suggestions}. Настроек уже в порядке: {applied}.";
+        ScanSummary = suggestions + manual == 0
+            ? "Доступных настроек не найдено."
+            : $"Рекомендаций: {suggestions}. Для ручной настройки: {manual}. Уже в порядке: {applied}.";
     }
 }

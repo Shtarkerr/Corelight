@@ -8,28 +8,28 @@
       "title": "Факс",
       "description": "Служба отправки и приёма факсов через модем.",
       "recommended": true,
-      "actions": [ { "type": "service", "service": "Fax", "startType": "Disabled", "default": "Manual" } ]
+      "actions": [ { "type": "service", "service": "Fax", "startType": "Disabled" } ]
     },
     {
       "id": "services.retail-demo",
       "title": "Демонстрационный режим для магазинов",
       "description": "Служба витринного режима, который включают на выставочных образцах в магазинах электроники.",
       "recommended": true,
-      "actions": [ { "type": "service", "service": "RetailDemo", "startType": "Disabled", "default": "Manual" } ]
+      "actions": [ { "type": "service", "service": "RetailDemo", "startType": "Disabled" } ]
     },
     {
       "id": "services.maps-broker",
       "title": "Диспетчер скачанных карт",
       "description": "Обновляет офлайн-карты для приложения «Карты Windows».",
       "recommended": true,
-      "actions": [ { "type": "service", "service": "MapsBroker", "startType": "Disabled", "default": "AutomaticDelayed" } ]
+      "actions": [ { "type": "service", "service": "MapsBroker", "startType": "Disabled" } ]
     },
     {
       "id": "services.link-tracking",
       "title": "Клиент отслеживания изменившихся связей",
       "description": "Сохраняет работу ярлыков при перемещении файлов по NTFS в локальной сети. Дома почти не используется.",
       "recommended": true,
-      "actions": [ { "type": "service", "service": "TrkWks", "startType": "Disabled", "default": "Automatic" } ]
+      "actions": [ { "type": "service", "service": "TrkWks", "startType": "Disabled" } ]
     },
     {
       "id": "services.print-spooler",
@@ -39,7 +39,7 @@
       "recommended": true,
       "risk": "Caution",
       "recommendWhen": [ "noPrinter" ],
-      "actions": [ { "type": "service", "service": "Spooler", "startType": "Disabled", "default": "Automatic" } ]
+      "actions": [ { "type": "service", "service": "Spooler", "startType": "Disabled" } ]
     },
     {
       "id": "services.bluetooth",
@@ -49,7 +49,7 @@
       "recommended": true,
       "risk": "Caution",
       "recommendWhen": [ "noBluetooth" ],
-      "actions": [ { "type": "service", "service": "bthserv", "startType": "Disabled", "default": "Manual" } ]
+      "actions": [ { "type": "service", "service": "bthserv", "startType": "Disabled" } ]
     },
     {
       "id": "services.parental-controls",
@@ -57,7 +57,7 @@
       "description": "Применяет ограничения Microsoft Family к детским учётным записям.",
       "warning": "Если на этом ПК есть детская учётная запись, ограничения перестанут действовать.",
       "risk": "Caution",
-      "actions": [ { "type": "service", "service": "WpcMonSvc", "startType": "Disabled", "default": "Manual" } ]
+      "actions": [ { "type": "service", "service": "WpcMonSvc", "startType": "Disabled" } ]
     },
     {
       "id": "services.sysmain",
@@ -65,7 +65,7 @@
       "description": "Предзагружает часто используемые программы в память. На SSD пользы мало; иногда нагружает диск.",
       "warning": "На HDD программы и игры могут запускаться заметно медленнее.",
       "risk": "Advanced",
-      "actions": [ { "type": "service", "service": "SysMain", "startType": "Disabled", "default": "Automatic" } ]
+      "actions": [ { "type": "service", "service": "SysMain", "startType": "Disabled" } ]
     },
     {
       "id": "services.search-indexer",
@@ -73,7 +73,7 @@
       "description": "Ускоряет поиск файлов, создавая индекс. Может нагружать CPU и диск, особенно после установки игр.",
       "warning": "Поиск в «Проводнике» и «Пуске» замедлится; поиск по содержимому документов и писем перестанет работать.",
       "risk": "Advanced",
-      "actions": [ { "type": "service", "service": "WSearch", "startType": "Disabled", "default": "AutomaticDelayed" } ]
+      "actions": [ { "type": "service", "service": "WSearch", "startType": "Disabled" } ]
     },
     {
       "id": "services.xbox-live",
@@ -82,9 +82,9 @@
       "warning": "Пропадут вход в Xbox Live и синхронизация сохранений в играх Store и Game Pass. Steam и другие лаунчеры не затрагиваются.",
       "risk": "Advanced",
       "actions": [
-        { "type": "service", "service": "XblAuthManager", "startType": "Disabled", "default": "Manual" },
-        { "type": "service", "service": "XblGameSave", "startType": "Disabled", "default": "Manual" },
-        { "type": "service", "service": "XboxNetApiSvc", "startType": "Disabled", "default": "Manual" }
+        { "type": "service", "service": "XblAuthManager", "startType": "Disabled" },
+        { "type": "service", "service": "XblGameSave", "startType": "Disabled" },
+        { "type": "service", "service": "XboxNetApiSvc", "startType": "Disabled" }
       ]
     }
   ]

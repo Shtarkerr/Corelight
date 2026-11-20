@@ -13,8 +13,6 @@ public sealed class ServiceStartupAction : TweakAction
 
     public ServiceStartType StartType { get; init; } = ServiceStartType.Disabled;
 
-    public ServiceStartType Default { get; init; } = ServiceStartType.Manual;
-
     public override Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct)
     {
         var current = p.Services.GetStartType(Service);
@@ -50,8 +48,6 @@ public sealed class ServiceStartupAction : TweakAction
 
     public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct) =>
         captured is null ? Task.CompletedTask : RestoreAsync(p, Parse(captured), ct);
-
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct) => RestoreAsync(p, (Default, null), ct);
 
     public override string Describe() => $"служба {Service}";
 

@@ -7,7 +7,7 @@ namespace Corelight.Core.Catalog;
 
 public sealed class TweakCatalog
 {
-    public static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -31,8 +31,6 @@ public sealed class TweakCatalog
     public IReadOnlyList<string> Rejected { get; }
 
     public TweakDefinition? Find(string id) => _byId.GetValueOrDefault(id);
-
-    public IEnumerable<TweakDefinition> InCategory(TweakCategory category) => Tweaks.Where(t => t.Category == category);
 
     /// <summary>Загружает каталог, вшитый в сборку (Catalog/Data/*.json).</summary>
     public static TweakCatalog LoadEmbedded()

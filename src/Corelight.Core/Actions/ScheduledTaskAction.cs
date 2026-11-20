@@ -3,7 +3,7 @@ using Corelight.Core.Tweaks;
 
 namespace Corelight.Core.Actions;
 
-/// <summary>Отключает задачу планировщика (по умолчанию все такие задачи включены).</summary>
+/// <summary>Отключает задачу планировщика и восстанавливает сохранённое состояние.</summary>
 public sealed class ScheduledTaskAction : TweakAction
 {
     /// <summary>Полный путь задачи, например "\Microsoft\Windows\Feedback\Siuf\DmClient".</summary>
@@ -31,13 +31,6 @@ public sealed class ScheduledTaskAction : TweakAction
     {
         if (captured is not null && p.Tasks.IsEnabled(Path) is not null)
             p.Tasks.SetEnabled(Path, bool.Parse(captured));
-        return Task.CompletedTask;
-    }
-
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct)
-    {
-        if (p.Tasks.IsEnabled(Path) is not null)
-            p.Tasks.SetEnabled(Path, true);
         return Task.CompletedTask;
     }
 

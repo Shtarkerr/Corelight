@@ -14,8 +14,7 @@
             <Border Style="{StaticResource Card}" Margin="0,0,0,6">
                 <DockPanel>
                     <CheckBox DockPanel.Dock="Left" VerticalAlignment="Top" Margin="0,2,8,0"
-                              IsChecked="{Binding IsSelected}" AutomationProperties.Name="{Binding Title}"
-                              Visibility="{Binding CanSelect, Converter={StaticResource BoolToVisibility}}" />
+                              IsChecked="{Binding IsSelected}" AutomationProperties.Name="{Binding Title}" />
                     <StackPanel>
                         <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
                         <TextBlock Margin="0,2,0,0" Style="{StaticResource CaptionText}" Text="{Binding CategoryText}" />
@@ -24,8 +23,6 @@
                                    Visibility="{Binding HasAvailabilityNote, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding Warning}"
                                    Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
-                        <TextBlock Margin="0,4,0,0" Style="{StaticResource CaptionText}" Text="Настраивается в «Расширенном»."
-                                   Visibility="{Binding IsAdvancedOnly, Converter={StaticResource BoolToVisibility}}" />
                         <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TweakBadges}" />
                     </StackPanel>
                 </DockPanel>
@@ -43,7 +40,7 @@
         <StackPanel Grid.Row="0">
             <TextBlock Style="{StaticResource PageTitle}" Text="Результаты сканирования" />
             <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
-                       Text="Проверьте выбор: «Осторожно» означает отключение функции или удаление приложения. Снимите галочки с нужного." />
+                       Text="Проверьте галочки перед применением. Пункты «Осторожно» могут отключить функцию или удалить приложение." />
         </StackPanel>
 
         <!-- Сканирования ещё не было -->
@@ -60,31 +57,22 @@
                       Visibility="{Binding HasScan, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
                 <Expander Header="{Binding ManualItemsHeader}" IsExpanded="{Binding IsManualExpanded, Mode=TwoWay}"
-                          Margin="0,0,0,12" Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                          Visibility="{Binding HasManualItems, Converter={StaticResource BoolToVisibility}}">
+                          Margin="0,0,0,16" Foreground="{DynamicResource TextFillColorPrimaryBrush}">
                     <StackPanel Margin="16,4,0,8">
-                        <ui:Button Margin="0,0,0,8" Content="Открыть «Расширенное»" Command="{Binding OpenAdvancedCommand}"
-                                   Visibility="{Binding HasAdvancedOnlyItems, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Style="{StaticResource SecondaryText}" Text="Дополнительных настроек не найдено."
+                                   Visibility="{Binding HasNoManualItems, Converter={StaticResource BoolToVisibility}}" />
                         <ItemsControl ItemsSource="{Binding ManualItems}" />
                     </StackPanel>
                 </Expander>
 
-                <Border Style="{StaticResource Card}" Padding="20"
-                        Visibility="{Binding HasNoSuggestions, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="28" Margin="0,0,16,0" Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource ItemTitle}" Text="Доступных рекомендаций не найдено" />
-                            <TextBlock Style="{StaticResource SecondaryText}" Text="Другие настройки — в разделе «Расширенное»." />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
+                <TextBlock Margin="0,0,0,8" Style="{StaticResource SectionTitle}" Text="Рекомендуемые настройки" />
+                <TextBlock Style="{StaticResource SecondaryText}" Text="Рекомендаций для этого ПК не найдено."
+                           Visibility="{Binding HasNoRecommendedItems, Converter={StaticResource BoolToVisibility}}" />
                 <ItemsControl ItemsSource="{Binding Groups}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:ScanGroupViewModel}">
                             <StackPanel Margin="0,0,0,16">
-                                <TextBlock Margin="0,0,0,8" Style="{StaticResource SectionTitle}" Text="{Binding Title}" />
+                                <TextBlock Margin="0,0,0,8" Style="{StaticResource CaptionText}" Text="{Binding Title}" />
                                 <ItemsControl ItemsSource="{Binding Items}" />
                             </StackPanel>
                         </DataTemplate>
@@ -108,7 +96,8 @@
                         <Run Text="из" />
                         <Run Text="{Binding TotalCount, Mode=OneWay}" />
                     </TextBlock>
-                    <ui:Button Margin="16,0,0,0" Appearance="Transparent" Content="Выбрать все" Command="{Binding SelectAllCommand}" />
+                    <ui:Button Margin="16,0,0,0" Appearance="Transparent" Content="Выбрать рекомендуемые"
+                               Command="{Binding SelectRecommendedCommand}" IsEnabled="{Binding HasRecommendedItems}" />
                     <ui:Button Margin="4,0,0,0" Appearance="Transparent" Content="Снять все" Command="{Binding SelectNoneCommand}" />
                 </StackPanel>
             </DockPanel>

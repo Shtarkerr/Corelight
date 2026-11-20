@@ -58,8 +58,8 @@ public sealed class ApplyCoordinator(
                     var confirmed = true;
                     if (apply)
                     {
-                        // Например, «Высокая производительность» перед «Максимальной»: сначала вернуть исходную схему.
-                        await Task.Run(() => engine.RevertConflictsAsync(tweak, catalog.Tweaks));
+                        if (engine.GetApplyConflictReason(tweak, catalog.Tweaks) is { } reason)
+                            throw new TweakException(reason);
                         var result = await Task.Run(() => engine.ApplyAsync(tweak));
                         warnings.AddRange(result.Warnings.Select(w => $"{tweak.Title}: {w}"));
                         confirmed = result.Confirmed;

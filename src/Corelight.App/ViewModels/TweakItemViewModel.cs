@@ -37,85 +37,20 @@ public abstract class TweakCardViewModel(TweakDefinition tweak) : ObservableObje
     };
 }
 
-/// <summary>Твик в разделе «Расширенное». IsOn = оптимизация применена.</summary>
-public partial class TweakItemViewModel(TweakDefinition tweak, Func<TweakItemViewModel, bool, Task> onToggle) : TweakCardViewModel(tweak)
+public sealed partial class AdvancedTweakItemViewModel(TweakDefinition tweak, Func<AdvancedTweakItemViewModel, Task> apply)
+    : TweakCardViewModel(tweak)
 {
-    private bool _suppressToggle;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanToggle))]
-    public partial bool IsOn { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanToggle))]
-    public partial bool IsBusy { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAvailable), nameof(CanToggle))]
-    public partial string? UnavailableReason { get; set; }
-
-    public bool IsAvailable => UnavailableReason is null;
-
-    public virtual bool CanToggle => IsAvailable && !IsBusy;
-
-    /// <summary>Показывает фактическое состояние, не запуская применение или откат.</summary>
-    public void SetStatus(TweakStatus status)
-    {
-        _suppressToggle = true;
-        IsOn = status.State == TweakState.Applied;
-        _suppressToggle = false;
-        UnavailableReason = status.UnavailableReason
-            ?? (status.State switch { TweakState.NotApplicable => "Компонентов этого пункта нет в системе.", TweakState.Unknown => "Не удалось проверить состояние.", _ => null });
-        OnStatusChanged();
-    }
-
-    protected virtual void OnStatusChanged() { }
-
-    partial void OnIsOnChanged(bool value)
-    {
-        OnStatusChanged();
-        if (!_suppressToggle)
-            _ = onToggle(this, value);
-    }
-}
-
-/// <summary>Приложение в разделе «Приложения»: вместо переключателя кнопка «Удалить» / «Вернуть».</summary>
-public sealed partial class AppItemViewModel(TweakDefinition tweak, Func<TweakItemViewModel, bool, Task> onToggle)
-    : TweakItemViewModel(tweak, onToggle)
-{
-    public bool IsRemoved => IsOn;
-
-    public string StatusText => IsOn ? "Удалено" : "Установлено";
-
-    public string ActionText => IsOn ? "Вернуть" : "Удалить";
-
-    public bool CanRestore => !Tweak.RequiresManualRestore;
-
-    public override bool CanToggle => base.CanToggle && (!IsOn || CanRestore);
-
-    public string? ActionHint => IsOn && !CanRestore ? "Для ручного возврата откройте «История и откат»." : null;
+    public string ActionText => Tweak.Category == TweakCategory.Apps ? "Удалить" : "Применить";
 
     [RelayCommand]
-    private void Toggle() => IsOn = !IsOn;
-
-    protected override void OnStatusChanged()
-    {
-        foreach (var name in (string[])[nameof(IsRemoved), nameof(StatusText), nameof(ActionText), nameof(CanToggle), nameof(ActionHint)])
-            OnPropertyChanged(name);
-    }
+    private Task ApplyAsync() => apply(this);
 }
 
 /// <summary>Карточка пункта в результатах сканирования.</summary>
 public sealed partial class ScanItemViewModel : TweakCardViewModel
 {
-    public ScanItemViewModel(TweakStatus status) : base(status.Tweak)
-    {
-        CanSelect = status.IsSuggestion;
-        IsSelected = status.IsPreselected;
-    }
-
-    public bool CanSelect { get; }
-    public bool IsAdvancedOnly => !CanSelect;
+    public ScanItemViewModel(TweakStatus status, bool? selected = null) : base(status.Tweak) =>
+        IsSelected = selected ?? status.IsPreselected;
 
     [ObservableProperty]
     public partial bool IsSelected { get; set; }

@@ -73,7 +73,7 @@ public sealed class DiskCleanupService
                                 if (DateTime.FromFileTimeUtc(stamp.Modified) > now - rule.MinimumAge || DateTime.FromFileTimeUtc(stamp.Creation) > now - rule.MinimumAge) continue;
                                 var target = rule.Filter == CleanupFilter.BrokenShortcuts ? _shell.BrokenShortcutTarget(path) : null;
                                 if (rule.Filter == CleanupFilter.BrokenShortcuts && target is null) continue;
-                                if (seen.Add(path)) files.Add(new(rule.CategoryId, path, stamp.Length, DateTime.FromFileTimeUtc(stamp.Modified)) { Stamp = stamp, Rule = rule, ShortcutTarget = target });
+                                if (seen.Add(path)) files.Add(new(rule.CategoryId, path, stamp.Length) { Stamp = stamp, Rule = rule, ShortcutTarget = target });
                             }
                             catch (Exception ex) when (IsFileError(ex)) { AddIssue(issues, path, ex.Message); }
                         }

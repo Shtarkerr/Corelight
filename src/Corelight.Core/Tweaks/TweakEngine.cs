@@ -75,20 +75,15 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             : TweakState.NotApplied);
     }
 
-    /// <summary>
-    /// Откатывает уже применённые твики той же группы взаимоисключающих (например, разные схемы питания).
-    /// Без этого бэкап нового твика запомнил бы состояние, созданное соседним твиком, а не исходное.
-    /// </summary>
-    public async Task RevertConflictsAsync(TweakDefinition tweak, IEnumerable<TweakDefinition> candidates, CancellationToken ct = default)
+    /// <summary>Объясняет, какое изменение той же группы нужно откатить перед применением.</summary>
+    public string? GetApplyConflictReason(TweakDefinition tweak, IEnumerable<TweakDefinition> candidates)
     {
         if (tweak.ExclusiveGroup is null)
-            return;
+            return null;
 
-        foreach (var other in candidates)
-        {
-            if (other.Id != tweak.Id && other.ExclusiveGroup == tweak.ExclusiveGroup && backups.Get(other.Id) is not null)
-                await RevertAsync(other, ct);
-        }
+        var conflict = candidates.FirstOrDefault(other =>
+            other.Id != tweak.Id && other.ExclusiveGroup == tweak.ExclusiveGroup && backups.Get(other.Id) is not null);
+        return conflict is null ? null : $"Сначала откатите «{conflict.Title}» в разделе «История и откат».";
     }
 
     public async Task<TweakResult> ApplyAsync(TweakDefinition tweak, CancellationToken ct = default)
@@ -213,29 +208,25 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
     public async Task RevertAsync(TweakDefinition tweak, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var record = backups.Get(tweak.Id)
+            ?? throw new TweakException($"Не удалось откатить «{tweak.Title}»: исходное состояние отсутствует в истории.");
+        EnsureCompatibleBackup(tweak, record);
         RefreshExternalState();
         log.LogInformation("Откат твика {Tweak}", tweak.Id);
-
-        var record = backups.Get(tweak.Id);
-        if (record is not null) EnsureCompatibleBackup(tweak, record);
         var errors = new List<string>();
 
         for (var i = tweak.Actions.Count - 1; i >= 0; i--)
         {
+            if (!record.Actions[i].Applicable) continue;
             var action = tweak.Actions[i];
             try
             {
                 ct.ThrowIfCancellationRequested();
-                if (record is not null)
-                {
-                    if (!record.Actions[i].Applicable) continue;
-                    if (!await MatchesBackupAsync(action, record.Actions[i].State, ct))
-                        await action.RevertAsync(platform, record.Actions[i].State, ct);
-                    if (!await MatchesBackupAsync(action, record.Actions[i].State, ct))
-                        throw new InvalidOperationException($"Возврат {action.Describe()} пока не подтверждён. Исходный бэкап сохранён.");
-                }
-                else if (await SafeDetectAsync(action, ct) == ActionState.Applied)
-                    await action.RevertToDefaultAsync(platform, ct);
+                if (await MatchesBackupAsync(action, record.Actions[i].State, ct))
+                    continue;
+                await action.RevertAsync(platform, record.Actions[i].State, ct);
+                if (!await MatchesBackupAsync(action, record.Actions[i].State, ct))
+                    throw new InvalidOperationException($"Возврат {action.Describe()} пока не подтверждён. Исходный бэкап сохранён.");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -248,8 +239,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         if (errors.Count > 0)
             throw new TweakException($"Не удалось полностью откатить «{tweak.Title}»: {string.Join(" ", errors.Distinct())}");
 
-        if (record is not null)
-            backups.Remove(tweak.Id);
+        backups.Remove(tweak.Id);
     }
 
     /// <summary>Подтверждает ручной возврат приложения по бэкапу. Ничего не устанавливает и не удаляет.</summary>

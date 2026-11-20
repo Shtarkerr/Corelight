@@ -10,9 +10,11 @@ namespace Corelight.App.Services;
 public sealed partial class AppState(Scanner scanner) : ObservableObject
 {
     private Task<HardwareProfile>? _hardware;
+    private int _lastScanVersion;
 
-    [ObservableProperty]
-    public partial ScanReport? LastScan { get; set; }
+    public ScanReport? LastScan { get; private set; }
+    public int UserScanVersion { get; private set; }
+    public bool NeedsScanRefresh => LastScan is not null && _lastScanVersion != ChangeVersion;
 
     [ObservableProperty]
     public partial bool RebootRequired { get; set; }
@@ -36,6 +38,28 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
         _hardware is null || _hardware.IsFaulted || _hardware.IsCanceled ? RefreshHardwareAsync() : _hardware;
 
     public Task<HardwareProfile> RefreshHardwareAsync() => _hardware = scanner.ProbeHardwareAsync();
+
+    public void SetUserScan(ScanReport report)
+    {
+        UserScanVersion++;
+        LastScan = report;
+        _lastScanVersion = ChangeVersion;
+    }
+
+    public void ClearLastScan() => LastScan = null;
+
+    public async Task<ScanReport> RefreshTweakStatusesAsync()
+    {
+        var version = ChangeVersion;
+        var report = await scanner.ScanAsync(await GetHardwareAsync());
+        if (LastScan is { } previous)
+        {
+            if (!previous.Statuses.SequenceEqual(report.Statuses))
+                LastScan = report;
+            _lastScanVersion = version;
+        }
+        return report;
+    }
 
     public void MarkSystemChanged() => ChangeVersion++;
 

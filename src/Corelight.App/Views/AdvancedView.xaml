@@ -10,46 +10,19 @@
     d:DataContext="{d:DesignInstance vm:AdvancedViewModel}">
 
     <UserControl.Resources>
-        <!-- Обычный твик: описание слева, переключатель справа. -->
-        <DataTemplate DataType="{x:Type vm:TweakItemViewModel}">
+        <DataTemplate DataType="{x:Type vm:AdvancedTweakItemViewModel}">
             <Border Style="{StaticResource Card}" Margin="0,0,0,6">
                 <DockPanel>
-                    <ui:ToggleSwitch DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0"
-                                     IsChecked="{Binding IsOn}" IsEnabled="{Binding CanToggle}" />
+                    <ui:Button DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0"
+                               Content="{Binding ActionText}" Command="{Binding ApplyCommand}" />
                     <StackPanel>
                         <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
                         <TextBlock Margin="0,2,0,0" Style="{StaticResource SecondaryText}" Text="{Binding Description}" />
                         <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding Warning}"
                                    Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
-                        <TextBlock Style="{StaticResource OptionalCaption}" Text="{Binding UnavailableReason}" />
-                        <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TweakBadges}" />
-                    </StackPanel>
-                </DockPanel>
-            </Border>
-        </DataTemplate>
-
-        <!-- Приложение: статус и кнопка «Удалить» / «Вернуть». -->
-        <DataTemplate DataType="{x:Type vm:AppItemViewModel}">
-            <Border Style="{StaticResource Card}" Margin="0,0,0,6">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="16,0,0,0" MinWidth="120">
-                        <ui:Button HorizontalAlignment="Stretch" Content="{Binding ActionText}"
-                                   Command="{Binding ToggleCommand}" IsEnabled="{Binding CanToggle}" />
-                        <TextBlock Margin="0,4,0,0" HorizontalAlignment="Center" Style="{StaticResource CaptionText}" Text="{Binding StatusText}" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
-                        <TextBlock Margin="0,2,0,0" Style="{StaticResource SecondaryText}" Text="{Binding Description}" />
-                        <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding Warning}"
-                                   Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}" />
-                        <TextBlock Style="{StaticResource OptionalCaption}" Text="{Binding ActionHint}" />
                         <TextBlock Margin="0,4,0,0" Style="{StaticResource WarningText}" Text="{Binding AvailabilityNote}"
                                    Visibility="{Binding HasAvailabilityNote, Converter={StaticResource BoolToVisibility}}" />
-                        <WrapPanel Margin="0,6,0,0">
-                            <Border Style="{StaticResource RiskBadge}">
-                                <TextBlock FontSize="11" Text="{Binding RiskText}" />
-                            </Border>
-                        </WrapPanel>
+                        <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TweakBadges}" />
                     </StackPanel>
                 </DockPanel>
             </Border>
@@ -81,16 +54,15 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0" Style="{StaticResource PageTitle}" Text="Расширенное" />
 
-        <!-- Вкладки разделов -->
-        <ListBox Grid.Row="1" Margin="0,12,0,0"
-                 ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection}"
+        <ListBox Grid.Row="1" Margin="0,12,0,10"
+                 SelectedIndex="{Binding SelectedBlockIndex, Mode=TwoWay}"
                  ItemContainerStyle="{StaticResource PillItem}"
+                 AutomationProperties.Name="Блоки раздела «Расширенное»"
                  Background="Transparent" BorderThickness="0"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
             <ListBox.ItemsPanel>
@@ -98,27 +70,63 @@
                     <WrapPanel />
                 </ItemsPanelTemplate>
             </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-                <DataTemplate DataType="{x:Type vm:AdvancedSectionViewModel}">
-                    <StackPanel Orientation="Horizontal" Margin="2,2">
-                        <ui:SymbolIcon Symbol="{Binding Info.Icon}" FontSize="16" Margin="0,0,8,0" />
-                        <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
+            <ListBoxItem Content="Неприменённые настройки" />
+            <ListBoxItem Content="Автозагрузка" />
         </ListBox>
 
-        <StackPanel Grid.Row="2" Margin="0,12,0,12">
-            <TextBlock Style="{StaticResource SecondaryText}" FontSize="14" Text="{Binding SelectedSection.Info.Subtitle}" />
-            <TextBlock Margin="0,4,0,0" Style="{StaticResource CaptionText}" Text="{Binding SelectedSection.Hint}" />
-        </StackPanel>
+        <Grid Grid.Row="2" Visibility="{Binding ShowsPendingOptions, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding SelectedSection.EmptyText}"
-                           Visibility="{Binding SelectedSection.IsEmpty, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
-                <ItemsControl ItemsSource="{Binding SelectedSection.Items}" />
-            </StackPanel>
-        </ScrollViewer>
+            <ListBox Grid.Row="0" ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection}"
+                     ItemContainerStyle="{StaticResource PillItem}"
+                     AutomationProperties.Name="Категории неприменённых настроек"
+                     Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:AdvancedSectionViewModel}">
+                        <StackPanel Orientation="Horizontal" Margin="2,2">
+                            <ui:SymbolIcon Symbol="{Binding Info.Icon}" FontSize="16" Margin="0,0,8,0" />
+                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <TextBlock Grid.Row="1" Margin="0,6,0,12" Style="{StaticResource SecondaryText}"
+                       Text="{Binding SelectedSection.Info.Subtitle}" />
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource SecondaryText}" Text="В этой категории нет доступных неприменённых настроек."
+                               Visibility="{Binding SelectedSection.IsEmpty, Converter={StaticResource BoolToVisibility}, FallbackValue=Collapsed}" />
+                    <ItemsControl ItemsSource="{Binding SelectedSection.Items}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <Grid Grid.Row="2" Visibility="{Binding ShowsStartup, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Margin="0,0,0,12" Style="{StaticResource SecondaryText}"
+                       Text="Выключите автозапуск программы, чтобы она не открывалась при входе в Windows." />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource SecondaryText}" Text="Записей автозагрузки не найдено."
+                               Visibility="{Binding HasNoStartupItems, Converter={StaticResource BoolToVisibility}}" />
+                    <ItemsControl ItemsSource="{Binding StartupItems}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </UserControl>

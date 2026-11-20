@@ -60,19 +60,6 @@ public sealed class RegistryListEntryAction : TweakAction
         return Task.CompletedTask;
     }
 
-    public override Task RevertToDefaultAsync(PlatformServices p, CancellationToken ct)
-    {
-        var entries = Parse(p.Registry.GetValue(Path, Name)?.Data);
-        if (!entries.Remove(Key))
-            return Task.CompletedTask;
-
-        if (entries.Count == 0)
-            p.Registry.DeleteValue(Path, Name);
-        else
-            p.Registry.SetValue(Path, Name, new RegValue(RegistryValueKind.String, Format(entries)));
-        return Task.CompletedTask;
-    }
-
     public override string Describe() => $@"{Path}\{Name} [{Key}]";
 
     // Порядок пар сохраняется, чтобы не менять строку сильнее, чем нужно.
