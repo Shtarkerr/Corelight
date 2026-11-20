@@ -1,6 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Corelight.Core.Actions;
 using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
 using Corelight.App.Services;
@@ -90,11 +89,11 @@ public sealed partial class AppItemViewModel(TweakDefinition tweak, Func<TweakIt
 
     public string ActionText => IsOn ? "Вернуть" : "Удалить";
 
-    public bool CanRestore => Tweak.Actions.OfType<AppxPackageAction>().All(a => a.StoreId is not null);
+    public bool CanRestore => !Tweak.RequiresManualRestore;
 
     public override bool CanToggle => base.CanToggle && (!IsOn || CanRestore);
 
-    public string? ActionHint => IsOn && !CanRestore ? "Вернуть можно только вручную через Microsoft Store" : null;
+    public string? ActionHint => IsOn && !CanRestore ? "Для ручного возврата откройте «История и откат»." : null;
 
     [RelayCommand]
     private void Toggle() => IsOn = !IsOn;
@@ -106,10 +105,17 @@ public sealed partial class AppItemViewModel(TweakDefinition tweak, Func<TweakIt
     }
 }
 
-/// <summary>Рекомендация в результатах сканирования.</summary>
+/// <summary>Карточка пункта в результатах сканирования.</summary>
 public sealed partial class ScanItemViewModel : TweakCardViewModel
 {
-    public ScanItemViewModel(TweakStatus status) : base(status.Tweak) => IsSelected = status.IsPreselected;
+    public ScanItemViewModel(TweakStatus status) : base(status.Tweak)
+    {
+        CanSelect = status.IsSuggestion;
+        IsSelected = status.IsPreselected;
+    }
+
+    public bool CanSelect { get; }
+    public bool IsAdvancedOnly => !CanSelect;
 
     [ObservableProperty]
     public partial bool IsSelected { get; set; }

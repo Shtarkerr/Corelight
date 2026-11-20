@@ -19,8 +19,7 @@ public sealed class HistoryItemViewModel(BackupRecord record, TweakDefinition? t
     public bool HasAvailabilityNote => !string.IsNullOrWhiteSpace(AvailabilityNote);
     public string AppliedAtText => record.AppliedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm");
 
-    // Приложение без ID в Microsoft Store переустановить автоматически нельзя.
-    public bool NeedsManualRestore => Tweak?.Actions.OfType<AppxPackageAction>().Any(a => a.StoreId is null) == true;
+    public bool NeedsManualRestore => Tweak?.RequiresManualRestore == true;
 
     public bool CanRevert => Tweak is not null && !NeedsManualRestore;
 

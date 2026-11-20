@@ -56,6 +56,9 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         if (relevant.Count == 0)
             return new(TweakState.NotApplicable);
 
+        if (tweak.AppliedWhenAnyActionMatches)
+            return new(relevant.Any(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied);
+
         // Состояние определяют обязательные действия.
         // Варианты одного приложения (например, старый/новый Teams) считаются установленными,
         // пока присутствует хотя бы один пакет; optional влияет на обработку ошибок, а не на наличие.
@@ -254,7 +257,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
     {
         var record = backups.Get(tweak.Id);
         if (record is null || record.Actions.Count != tweak.Actions.Count || tweak.Actions.Count == 0
-            || tweak.Actions.Any(a => a is not Corelight.Core.Actions.AppxPackageAction))
+            || tweak.Actions.Any(a => a is not (AppxPackageAction or CopilotDesktopAction)))
             return false;
 
         EnsureCompatibleBackup(tweak, record);

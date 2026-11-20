@@ -57,6 +57,7 @@
       "title": "Отключить рекламный идентификатор",
       "description": "Уникальный ID, по которому приложения показывают персонализированную рекламу.",
       "recommended": true,
+      "appliedWhenAnyActionMatches": true,
       "actions": [
         { "type": "registry", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo", "name": "Enabled", "value": "0", "default": "1" },
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AdvertisingInfo", "name": "DisabledByGroupPolicy", "value": "1" }

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Corelight.Core.Actions;
 
 namespace Corelight.Core.Tweaks;
 
@@ -64,6 +65,8 @@ public sealed class TweakDefinition
     public bool? Preselected { get; init; }
 
     public bool RequiresReboot { get; init; }
+    /// <summary>Одного совпавшего действия достаточно для эффективного состояния настройки.</summary>
+    public bool AppliedWhenAnyActionMatches { get; init; }
 
     /// <summary>Минимальная сборка Windows, на которой твик имеет смысл.</summary>
     public int MinBuild { get; init; }
@@ -78,4 +81,7 @@ public sealed class TweakDefinition
     public string? ExclusiveGroup { get; init; }
 
     public IReadOnlyList<TweakAction> Actions { get; init; } = [];
+
+    [JsonIgnore]
+    public bool RequiresManualRestore => Actions.Any(a => a is CopilotDesktopAction or AppxPackageAction { StoreId: null });
 }

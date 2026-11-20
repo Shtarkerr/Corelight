@@ -96,6 +96,7 @@ public partial class App : Application
         services.AddSingleton<IAppxControl, WindowsAppxControl>();
         services.AddSingleton<IPowerControl, WindowsPowerControl>();
         services.AddSingleton<IOneDriveControl, WindowsOneDriveControl>();
+        services.AddSingleton<ICopilotDesktopControl, WindowsCopilotDesktopControl>();
         services.AddSingleton<IComponentPresence, WindowsComponentPresence>();
         services.AddSingleton<PlatformServices>();
 

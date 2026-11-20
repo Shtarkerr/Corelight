@@ -1,9 +1,12 @@
+using Corelight.App.Services;
+using Corelight.App.ViewModels;
 using Corelight.Core.Catalog;
 using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
 using Corelight.Core.SystemInfo;
 using Corelight.Core.Actions;
 using Corelight.Core.Platform;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Corelight.Tests;
 
@@ -22,115 +25,176 @@ public class ScanningTests
         Assert.Equal(new[] { "high", "medium-a", "medium-b", "low" }, report.Suggestions.Select(s => s.Tweak.Id));
     }
 
+    [Fact]
+    public void Scan_reports_available_manual_items_without_selecting_them()
+    {
+        TweakStatus Status(string id, TweakState state, bool recommended, string? reason = null, TweakRisk risk = TweakRisk.Safe) =>
+            new(new TweakDefinition { Id = id, Title = id, Description = id, Risk = risk }, state, reason, recommended);
+        var report = new ScanReport(new HardwareProfile(),
+        [
+            Status("suggestion", TweakState.NotApplied, true),
+            Status("manual", TweakState.NotApplied, false),
+            Status("optional", TweakState.NotApplied, true, risk: TweakRisk.Caution),
+            Status("applied", TweakState.Applied, false),
+            Status("unavailable", TweakState.NotApplied, false, "Не поддерживается"),
+            Status("unknown", TweakState.Unknown, false),
+            Status("absent", TweakState.NotApplicable, false)
+        ]);
+
+        Assert.Equal(new[] { "optional", "manual" }, report.ManualItems.Select(s => s.Tweak.Id));
+        Assert.All(report.ManualItems, item => Assert.False(item.IsPreselected));
+        Assert.Equal("suggestion", Assert.Single(report.Suggestions, s => s.IsPreselected).Tweak.Id);
+    }
+
+    [Fact]
+    public async Task Scan_page_keeps_optional_choices_selectable_under_a_collapsible_section()
+    {
+        var catalog = TweakCatalog.LoadEmbedded();
+        TweakStatus Status(string id)
+        {
+            var tweak = catalog.Find(id)!;
+            return new(tweak, TweakState.NotApplied, null, tweak.Recommended);
+        }
+        var state = new AppState(null!)
+        {
+            LastScan = new ScanReport(new HardwareProfile(),
+                [Status("apps.outlook-new"), Status("apps.onedrive"), Status("apps.photos")])
+        };
+        var page = new ScanResultsViewModel(state, null!, null!, new NavigationService(), null!, NullLogger<ScanResultsViewModel>.Instance);
+
+        await page.OnNavigatedToAsync();
+
+        Assert.False(page.IsManualExpanded);
+        var outlook = Assert.Single(Assert.Single(page.Groups).Items);
+        Assert.Equal("apps.outlook-new", outlook.Tweak.Id);
+        Assert.True(outlook.IsSelected);
+        Assert.Collection(page.ManualItems,
+            oneDrive =>
+            {
+                Assert.Equal("apps.onedrive", oneDrive.Tweak.Id);
+                Assert.True(oneDrive.CanSelect);
+                Assert.False(oneDrive.IsSelected);
+                Assert.True(oneDrive.HasWarning);
+            },
+            photos =>
+            {
+                Assert.Equal("apps.photos", photos.Tweak.Id);
+                Assert.True(photos.IsAdvancedOnly);
+                Assert.False(photos.IsSelected);
+            });
+        Assert.Equal(1, page.SelectedCount);
+        Assert.Equal(2, page.TotalCount);
+
+        page.SelectNoneCommand.Execute(null);
+        Assert.False(page.ApplyCommand.CanExecute(null));
+        page.IsManualExpanded = true;
+        page.ManualItems[0].IsSelected = true;
+        Assert.True(page.ApplyCommand.CanExecute(null));
+        Assert.Equal(1, page.SelectedCount);
+        Assert.Contains("выбрано 1", page.ManualItemsHeader);
+
+        await page.OnNavigatedToAsync();
+        Assert.True(page.IsManualExpanded);
+        Assert.True(page.ManualItems[0].IsSelected);
+
+        page.SelectAllCommand.Execute(null);
+        Assert.Equal(2, page.SelectedCount);
+        Assert.False(page.ManualItems[1].IsSelected);
+
+        state.LastScan = state.LastScan! with { Statuses = state.LastScan.Statuses.ToArray() };
+        await page.OnNavigatedToAsync();
+        Assert.False(page.IsManualExpanded);
+        Assert.Equal(1, page.SelectedCount);
+    }
+
+    [Fact]
+    public async Task Game_mode_uses_the_windows_default_until_explicitly_disabled()
+    {
+        var sys = new TestSystem();
+        var tweak = TweakCatalog.LoadEmbedded().Find("gaming.game-mode")!;
+        var engine = sys.CreateEngine();
+        Assert.Equal(TweakState.Applied, await engine.DetectAsync(tweak));
+        Assert.Empty(sys.Registry.Values);
+
+        sys.Registry.SetValue(@"HKCU\Software\Microsoft\GameBar", "AutoGameModeEnabled", RegValue.DWord(0));
+        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
+    }
+
+    [Fact]
+    public async Task Hags_uses_the_live_driver_state_when_there_is_no_registry_override()
+    {
+        var sys = new TestSystem();
+        var tweak = TweakCatalog.LoadEmbedded().Find("gaming.hags")!;
+        var engine = sys.CreateEngine();
+        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
+
+        sys.Components.Present.Add(WindowsComponent.HagsEnabled);
+        Assert.Equal(TweakState.Applied, await engine.DetectAsync(tweak));
+        Assert.Empty(sys.Registry.Values);
+
+        sys.Registry.SetValue(@"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", RegValue.DWord(1));
+        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
+    }
+
+    [Theory]
+    [InlineData(false, false, TweakState.NotApplied)]
+    [InlineData(true, false, TweakState.Applied)]
+    [InlineData(false, true, TweakState.Applied)]
+    public async Task Advertising_id_is_disabled_by_user_setting_or_machine_policy(
+        bool disabledByUser, bool disabledByPolicy, TweakState expected)
+    {
+        var sys = new TestSystem();
+        var tweak = TweakCatalog.LoadEmbedded().Find("privacy.advertising-id")!;
+        sys.Registry.SetValue(@"HKCU\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo",
+            "Enabled", RegValue.DWord(disabledByUser ? 0u : 1u));
+        if (disabledByPolicy)
+            sys.Registry.SetValue(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo", "DisabledByGroupPolicy", RegValue.DWord(1));
+
+        Assert.Equal(expected, await sys.CreateEngine().DetectAsync(tweak));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Widgets_policy_denial_is_explained_and_already_disabled_policy_is_not_written(bool alreadyDisabled)
+    public async Task Registry_policy_denial_is_explained_and_already_disabled_policy_is_not_written(bool alreadyDisabled)
     {
         var sys = new TestSystem();
-        sys.Apps.Installed.Add("MicrosoftWindows.Client.WebExperience");
-        const string path = @"HKLM\SOFTWARE\Policies\Microsoft\Dsh";
-        sys.Registry.SetValue(path, "AllowNewsAndInterests", Corelight.Core.Platform.RegValue.DWord(alreadyDisabled ? 0u : 1u));
+        var action = new RegistryValueAction
+        {
+            Path = @"HKCU\Software\Corelight.Tests",
+            Name = "TestPolicy",
+            Value = "0"
+        };
+        sys.Registry.SetValue(action.Path, action.Name, RegValue.DWord(alreadyDisabled ? 0u : 1u));
         sys.Registry.DenyWrites = true;
-        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
+        var tweak = TestSystem.Tweak(action);
         var engine = sys.CreateEngine();
 
         if (alreadyDisabled)
         {
             Assert.Equal(TweakState.Applied, await engine.DetectAsync(tweak));
             Assert.True((await engine.ApplyAsync(tweak)).Confirmed);
+            return;
         }
-        else
-        {
-            var error = await Assert.ThrowsAsync<TweakException>(() => engine.ApplyAsync(tweak));
-            Assert.Contains("Windows запретила", error.Message);
-            Assert.Contains("AllowNewsAndInterests", error.Message);
-            Assert.Equal("1", sys.Registry.GetValue(path, "AllowNewsAndInterests")!.Data);
-            Assert.Null(sys.Backups.Get(tweak.Id));
-            Assert.False(new TweakStatus(tweak, TweakState.NotApplied, null, tweak.Recommended).IsSuggestion);
-            var detection = await engine.DetectDetailedAsync(tweak);
-            Assert.Equal(TweakState.Unknown, detection.State);
-            Assert.Contains("Windows запретила", detection.Error);
-            sys.Registry.DenyWrites = false;
-            await Assert.ThrowsAsync<TweakException>(() => engine.ApplyAsync(tweak));
-            Assert.Equal("1", sys.Registry.GetValue(path, "AllowNewsAndInterests")!.Data);
-        }
+
+        var error = await Assert.ThrowsAsync<TweakException>(() => engine.ApplyAsync(tweak));
+        Assert.Contains("Windows запретила", error.Message);
+        Assert.Contains(action.Name, error.Message);
+        Assert.Null(sys.Backups.Get(tweak.Id));
+        var detection = await engine.DetectDetailedAsync(tweak);
+        Assert.Equal(TweakState.Unknown, detection.State);
+        Assert.Contains("Windows запретила", detection.Error);
+        sys.Registry.DenyWrites = false;
+        await Assert.ThrowsAsync<TweakException>(() => engine.ApplyAsync(tweak));
+        Assert.Equal("1", sys.Registry.GetValue(action.Path, action.Name)!.Data);
     }
 
     [Theory]
-    [InlineData(null)]
-    [InlineData(0u)]
-    [InlineData(1u)]
-    public async Task Removed_widgets_are_not_suggested_and_their_policy_is_not_written(uint? policy)
+    [InlineData("interface.widgets")]
+    [InlineData("apps.web-experience")]
+    public void Widget_entries_are_absent_from_catalog(string id)
     {
-        var sys = new TestSystem();
-        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
-        var action = Assert.IsType<RegistryValueAction>(Assert.Single(tweak.Actions));
-        if (policy is not null) sys.Registry.SetValue(action.Path, action.Name, RegValue.DWord(policy.Value));
-        var original = sys.Registry.GetValue(action.Path, action.Name);
-        sys.Registry.DenyWrites = true;
-
-        var state = await sys.CreateEngine().DetectAsync(tweak);
-        Assert.Equal(TweakState.NotApplicable, state);
-        Assert.False(new TweakStatus(tweak, state, null, true).IsSuggestion);
-        await action.ApplyAsync(sys.Platform, default);
-        await sys.CreateEngine().ApplyAsync(tweak);
-        Assert.Equal(original, sys.Registry.GetValue(action.Path, action.Name));
-    }
-
-    [Theory]
-    [InlineData(null, TweakState.NotApplied)]
-    [InlineData(0u, TweakState.Applied)]
-    [InlineData(1u, TweakState.NotApplied)]
-    public async Task Installed_widgets_use_the_policy_even_when_the_taskbar_button_is_hidden(uint? policy, TweakState expected)
-    {
-        var sys = new TestSystem();
-        sys.Apps.Installed.Add("MicrosoftWindows.Client.WebExperience");
-        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
-        var action = Assert.IsType<RegistryValueAction>(Assert.Single(tweak.Actions));
-        if (policy is not null) sys.Registry.SetValue(action.Path, action.Name, RegValue.DWord(policy.Value));
-        sys.Registry.SetValue(@"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarDa", RegValue.DWord(0));
-
-        var state = await sys.CreateEngine().DetectAsync(tweak);
-        Assert.Equal(expected, state);
-        Assert.Equal(expected == TweakState.NotApplied, new TweakStatus(tweak, state, null, true).IsSuggestion);
-    }
-
-    [Fact]
-    public async Task Widgets_removed_after_scanning_are_not_changed_on_apply()
-    {
-        var sys = new TestSystem();
-        sys.Apps.Installed.Add("MicrosoftWindows.Client.WebExperience");
-        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
-        var engine = sys.CreateEngine();
-        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
-        sys.Apps.Installed.Clear();
-        sys.Registry.DenyWrites = true;
-
-        await engine.ApplyAsync(tweak);
-
-        Assert.Empty(sys.Registry.Values);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Widgets_backup_from_previous_catalog_can_be_restored_after_component_removal(bool hadPolicy)
-    {
-        var sys = new TestSystem();
-        var tweak = TweakCatalog.LoadEmbedded().Find("interface.widgets")!;
-        var current = Assert.IsType<RegistryValueAction>(Assert.Single(tweak.Actions));
-        var legacy = TestSystem.Tweak(new RegistryValueAction { Path = current.Path, Name = current.Name, Value = current.Value });
-        if (hadPolicy) sys.Registry.SetValue(current.Path, current.Name, RegValue.DWord(1));
-        var original = sys.Registry.GetValue(current.Path, current.Name);
-        var engine = sys.CreateEngine();
-        await engine.ApplyAsync(legacy);
-
-        // Старый каталог не проверял пакет. Идентификатор цели и формат снимка прежние.
-        await engine.RevertAsync(new TweakDefinition { Id = legacy.Id, Title = tweak.Title, Description = tweak.Description, Actions = tweak.Actions });
-
-        Assert.Equal(original, sys.Registry.GetValue(current.Path, current.Name));
-        Assert.Empty(sys.Backups.GetAll());
+        Assert.Null(TweakCatalog.LoadEmbedded().Find(id));
     }
 
     [Theory]

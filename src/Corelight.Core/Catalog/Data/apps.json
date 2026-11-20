@@ -38,7 +38,7 @@
     {
       "id": "apps.bing-weather",
       "title": "Погода (MSN Weather)",
-      "description": "Приложение прогноза погоды. Погоду также показывают виджеты и браузер.",
+      "description": "Приложение прогноза погоды.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.BingWeather", "storeId": "9WZDNCRFJ3Q2" } ]
     },
@@ -151,9 +151,20 @@
     {
       "id": "apps.copilot",
       "title": "Copilot",
-      "description": "ИИ-ассистент Microsoft через интернет. Можно удалить вместе с кнопкой на панели задач.",
+      "description": "Пакетная версия ИИ-ассистента Microsoft. Возврат через Microsoft Store.",
       "recommended": true,
       "actions": [ { "type": "appx", "package": "Microsoft.Copilot", "storeId": "9NHT9RB2F4HD" } ]
+    },
+    {
+      "id": "apps.copilot-desktop",
+      "title": "Copilot (настольная версия)",
+      "description": "ИИ-ассистент Microsoft, установленный как обычная программа Windows.",
+      "warning": "Возврат только вручную. Удаляйте, если Copilot вам больше не нужен.",
+      "restoreHelpUrl": "https://support.microsoft.com/en-us/microsoft-365-copilot/what-is-microsoft-copilot-app",
+      "restoreHelpText": "Откройте инструкцию Microsoft и установите Copilot. Если вернётся настольная версия, повторите «Проверить возврат». Доступность прежнего варианта установки зависит от Microsoft.",
+      "risk": "Caution",
+      "recommended": true,
+      "actions": [ { "type": "copilotDesktop" } ]
     },
     {
       "id": "apps.dev-home",
@@ -220,13 +231,6 @@
       "description": "Стандартный просмотрщик изображений. Без него картинки придётся открывать другой программой.",
       "risk": "Caution",
       "actions": [ { "type": "appx", "package": "Microsoft.Windows.Photos", "storeId": "9WZDNCRFJBH4" } ]
-    },
-    {
-      "id": "apps.web-experience",
-      "title": "Пакет виджетов (Web Experience Pack)",
-      "description": "Компонент виджетов. Для их отключения достаточно настройки «Отключить виджеты» в «Интерфейсе и фоне».",
-      "risk": "Caution",
-      "actions": [ { "type": "appx", "package": "MicrosoftWindows.Client.WebExperience", "storeId": "9MSSGKG348SP" } ]
     },
     {
       "id": "apps.xbox",

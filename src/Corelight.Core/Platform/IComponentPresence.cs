@@ -1,9 +1,12 @@
+using Corelight.Core.SystemInfo;
+
 namespace Corelight.Core.Platform;
 
 public enum WindowsComponent
 {
     Edge,
     Recall,
+    HagsEnabled,
 }
 
 /// <summary>Наличие компонентов, которые нельзя определять по ключу их политики.</summary>
@@ -30,6 +33,9 @@ public sealed class WindowsComponentPresence(IRegistryAccess registry, IProcessR
                 return Task.FromResult(EdgePaths().Any(FileExists));
             case WindowsComponent.Recall:
                 lock (_gate) return _recall ??= RecallEnabledAsync(ct);
+            case WindowsComponent.HagsEnabled:
+                return Task.FromResult(HagsProbe.Read()?.Enabled
+                    ?? throw new InvalidOperationException("Не удалось определить текущее состояние HAGS."));
             default:
                 throw new ArgumentOutOfRangeException(nameof(component));
         }

@@ -10,8 +10,8 @@
       "recommended": true,
       "impact": "Medium",
       "actions": [
-        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\GameBar", "name": "AutoGameModeEnabled", "value": "1" },
-        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\GameBar", "name": "AllowAutoGameMode", "value": "1" }
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\GameBar", "name": "AutoGameModeEnabled", "value": "1", "effectiveWhenMissing": "1" },
+        { "type": "registry", "path": "HKCU\\Software\\Microsoft\\GameBar", "name": "AllowAutoGameMode", "value": "1", "effectiveWhenMissing": "1" }
       ]
     },
     {
@@ -38,7 +38,7 @@
       "requiresReboot": true,
       "requires": [ "hagsSupported" ],
       "actions": [
-        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", "name": "HwSchMode", "value": "2" }
+        { "type": "registry", "path": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", "name": "HwSchMode", "value": "2", "effectiveWhenMissing": "2", "effectiveWhenMissingRequires": "HagsEnabled" }
       ]
     },
     {

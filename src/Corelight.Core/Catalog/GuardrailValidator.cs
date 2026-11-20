@@ -122,7 +122,8 @@ public static class GuardrailValidator
         {
             case RegistryValueAction r:
                 return ValidateRegistry(r.Path, () => new RegValue(r.Kind, r.Value).Normalize(),
-                    r.Default is null ? null : () => new RegValue(r.Kind, r.Default).Normalize());
+                    r.Default is null ? null : () => new RegValue(r.Kind, r.Default).Normalize(),
+                    r.EffectiveWhenMissing is null ? null : () => new RegValue(r.Kind, r.EffectiveWhenMissing).Normalize());
             case RegistryListEntryAction l:
                 return ValidateRegistry(l.Path, null, null);
             case ServiceStartupAction s when ForbiddenServices.Contains(s.Service):
@@ -142,7 +143,8 @@ public static class GuardrailValidator
         }
     }
 
-    private static IEnumerable<string> ValidateRegistry(string path, Func<RegValue>? value, Func<RegValue>? defaultValue)
+    private static IEnumerable<string> ValidateRegistry(string path, Func<RegValue>? value, Func<RegValue>? defaultValue,
+        Func<RegValue>? effectiveWhenMissing = null)
     {
         path = NormalizePath(path);
         if (!path.StartsWith(@"HKLM\", StringComparison.OrdinalIgnoreCase) && !path.StartsWith(@"HKCU\", StringComparison.OrdinalIgnoreCase))
@@ -164,6 +166,7 @@ public static class GuardrailValidator
         {
             value?.Invoke();
             defaultValue?.Invoke();
+            effectiveWhenMissing?.Invoke();
         }
         catch (Exception ex) when (ex is FormatException or OverflowException or NotSupportedException)
         {

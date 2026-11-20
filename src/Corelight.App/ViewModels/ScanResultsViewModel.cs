@@ -20,8 +20,31 @@ public sealed partial class ScanResultsViewModel(
     ILogger<ScanResultsViewModel> log) : ObservableObject, INavigationAware
 {
     private int _renderedVersion = -1;
+    private ScanReport? _renderedReport;
 
     public ObservableCollection<ScanGroupViewModel> Groups { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasManualItems), nameof(HasAdvancedOnlyItems), nameof(ManualItemsHeader))]
+    public partial IReadOnlyList<ScanItemViewModel> ManualItems { get; set; } = [];
+
+    [ObservableProperty]
+    public partial bool IsManualExpanded { get; set; }
+
+    public bool HasManualItems => ManualItems.Count > 0;
+    public bool HasAdvancedOnlyItems => ManualItems.Any(i => i.IsAdvancedOnly);
+    public string ManualItemsHeader
+    {
+        get
+        {
+            var selected = ManualItems.Count(i => i.CanSelect && i.IsSelected);
+            return selected == 0 ? $"Для ручной настройки ({ManualItems.Count})"
+                : $"Для ручной настройки ({ManualItems.Count}, выбрано {selected})";
+        }
+    }
+
+    private IEnumerable<ScanItemViewModel> SelectableItems =>
+        Groups.SelectMany(g => g.Items).Concat(ManualItems.Where(i => i.CanSelect));
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasNoSuggestions), nameof(HasNoScan))]
@@ -51,6 +74,9 @@ public sealed partial class ScanResultsViewModel(
     private void GoHome() => navigation.NavigateTo<HomeViewModel>();
 
     [RelayCommand]
+    private void OpenAdvanced() => navigation.NavigateTo<AdvancedViewModel>();
+
+    [RelayCommand]
     private void SelectAll() => SetAll(true);
 
     [RelayCommand]
@@ -59,7 +85,7 @@ public sealed partial class ScanResultsViewModel(
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task ApplyAsync()
     {
-        var selected = Groups.SelectMany(g => g.Items).Where(i => i.IsSelected).Select(i => i.Tweak).ToList();
+        var selected = SelectableItems.Where(i => i.IsSelected).Select(i => i.Tweak).ToList();
         var confirmed = await dialogs.ConfirmAsync(
             "Применить изменения?",
             $"Будет применено изменений: {selected.Count}.\n\n" +
@@ -95,20 +121,24 @@ public sealed partial class ScanResultsViewModel(
 
     private void Rebuild()
     {
-        foreach (var item in Groups.SelectMany(g => g.Items))
+        var report = state.LastScan;
+        if (_renderedVersion == state.ChangeVersion && ReferenceEquals(report, _renderedReport))
+            return;
+
+        foreach (var item in SelectableItems)
             item.PropertyChanged -= OnItemChanged;
         Groups.Clear();
 
-        var report = state.LastScan;
-        HasScan = report is not null;
+        _renderedReport = report;
         _renderedVersion = state.ChangeVersion;
+        HasScan = report is not null;
+        IsManualExpanded = false;
+        ManualItems = report?.ManualItems.Select(s => new ScanItemViewModel(s)).ToArray() ?? [];
         if (report is not null)
         {
-            foreach (var group in report.Suggestions.GroupBy(s => s.Tweak.Impact))
+            foreach (var group in report.Suggestions.Where(s => s.IsPreselected).GroupBy(s => s.Tweak.Impact))
             {
                 var items = group.Select(s => new ScanItemViewModel(s)).ToList();
-                foreach (var item in items)
-                    item.PropertyChanged += OnItemChanged;
                 var title = group.Key switch
                 {
                     TweakImpact.High => "Высокий предполагаемый эффект",
@@ -118,12 +148,14 @@ public sealed partial class ScanResultsViewModel(
                 Groups.Add(new ScanGroupViewModel(title, items));
             }
         }
+        foreach (var item in SelectableItems)
+            item.PropertyChanged += OnItemChanged;
         UpdateCounts();
     }
 
     private void SetAll(bool selected)
     {
-        foreach (var item in Groups.SelectMany(g => g.Items))
+        foreach (var item in SelectableItems)
             item.IsSelected = selected;
     }
 
@@ -135,8 +167,9 @@ public sealed partial class ScanResultsViewModel(
 
     private void UpdateCounts()
     {
-        var items = Groups.SelectMany(g => g.Items).ToList();
+        var items = SelectableItems.ToList();
         TotalCount = items.Count;
         SelectedCount = items.Count(i => i.IsSelected);
+        OnPropertyChanged(nameof(ManualItemsHeader));
     }
 }

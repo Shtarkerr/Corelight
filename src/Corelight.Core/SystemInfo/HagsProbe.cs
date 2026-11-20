@@ -10,9 +10,12 @@ internal static partial class HagsProbe
 {
     private const int KmtqaitypeWddm27Caps = 70;
     private const uint HwSchSupportedBit = 0x1;
+    private const uint HwSchEnabledBit = 0x2;
 
-    /// <returns>true/false, либо null, если драйвер не ответил на запрос.</returns>
-    public static unsafe bool? IsSupported()
+    public static bool? IsSupported() => Read()?.Supported;
+
+    /// <returns>Поддержка и текущее состояние HAGS либо null, если драйвер не ответил.</returns>
+    public static unsafe (bool Supported, bool Enabled)? Read()
     {
         try
         {
@@ -28,7 +31,7 @@ internal static partial class HagsProbe
                     return null;
             }
 
-            bool? result = null;
+            (bool Supported, bool Enabled)? result = null;
             for (var i = 0; i < enumArgs.NumAdapters; i++)
             {
                 uint caps = 0;
@@ -40,7 +43,11 @@ internal static partial class HagsProbe
                     PrivateDriverDataSize = sizeof(uint),
                 };
                 if (D3DKMTQueryAdapterInfo(ref query) == 0)
-                    result = (result ?? false) || (caps & HwSchSupportedBit) != 0;
+                {
+                    var supported = (caps & HwSchSupportedBit) != 0;
+                    result = (result?.Supported == true || supported,
+                        result?.Enabled == true || (supported && (caps & HwSchEnabledBit) != 0));
+                }
 
                 var close = new D3DKMT_CLOSEADAPTER { hAdapter = adapters[i].hAdapter };
                 D3DKMTCloseAdapter(ref close);

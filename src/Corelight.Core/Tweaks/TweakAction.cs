@@ -22,6 +22,7 @@ public enum ActionState
 [JsonDerivedType(typeof(ServiceStartupAction), "service")]
 [JsonDerivedType(typeof(ScheduledTaskAction), "task")]
 [JsonDerivedType(typeof(AppxPackageAction), "appx")]
+[JsonDerivedType(typeof(CopilotDesktopAction), "copilotDesktop")]
 [JsonDerivedType(typeof(OneDriveAction), "oneDrive")]
 [JsonDerivedType(typeof(PowerPlanAction), "powerPlan")]
 [JsonDerivedType(typeof(TcpNoDelayAction), "tcpNoDelay")]

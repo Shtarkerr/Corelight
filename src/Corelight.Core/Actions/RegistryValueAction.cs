@@ -21,6 +21,9 @@ public sealed class RegistryValueAction : TweakAction
 
     /// <summary>Значение Windows по умолчанию; null — значения по умолчанию нет (удаляется).</summary>
     public string? Default { get; init; }
+    /// <summary>Действующее значение при отсутствии записи. Используется только при обнаружении.</summary>
+    public string? EffectiveWhenMissing { get; init; }
+    public WindowsComponent? EffectiveWhenMissingRequires { get; init; }
 
     /// <summary>Не менять настройку отсутствующего компонента AppX. Откат сохранённого значения от этого условия не зависит.</summary>
     public string? RequiredPackage { get; init; }
@@ -31,22 +34,26 @@ public sealed class RegistryValueAction : TweakAction
 
     private RegValue Target => new(Kind, Value);
 
-    public override async Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct) =>
-        !await IsApplicableAsync(p, ct) ? ActionState.NotApplicable
-            : Target.SameAs(p.Registry.GetValue(Path, Name)) ? ActionState.Applied : ActionState.NotApplied;
+    public override async Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct)
+    {
+        if (!await IsApplicableAsync(p, ct)) return ActionState.NotApplicable;
+        var current = p.Registry.GetValue(Path, Name);
+        if (current is null && EffectiveWhenMissing is not null &&
+            (EffectiveWhenMissingRequires is not { } component || await IsComponentPresentAsync(p, component, ct)))
+            current = new RegValue(Kind, EffectiveWhenMissing);
+        return Target.SameAs(current) ? ActionState.Applied : ActionState.NotApplied;
+    }
 
     private async Task<bool> IsApplicableAsync(PlatformServices p, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (RequiredPackage is not null && !p.Apps.IsInstalled(RequiredPackage)) return false;
         if (RequiredService is not null && p.Services.GetStartType(RequiredService) is null) return false;
-        if (RequiredComponent is { } component)
-        {
-            if (p.Components is null) throw new InvalidOperationException("Проверка компонентов Windows недоступна.");
-            return await p.Components.IsPresentAsync(component, ct);
-        }
-        return true;
+        return RequiredComponent is not { } component || await IsComponentPresentAsync(p, component, ct);
     }
+
+    private static Task<bool> IsComponentPresentAsync(PlatformServices p, WindowsComponent component, CancellationToken ct) =>
+        p.Components?.IsPresentAsync(component, ct) ?? throw new InvalidOperationException("Проверка компонентов Windows недоступна.");
 
     public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct) =>
         Task.FromResult(Serialize(p.Registry.GetValue(Path, Name)));

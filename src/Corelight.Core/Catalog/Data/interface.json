@@ -1,20 +1,8 @@
 {
-  // Виджеты, фоновая активность и навязчивые функции оболочки.
+  // Фоновая активность и навязчивые функции оболочки.
   // Внешний вид (анимации, прозрачность, сглаживание) сознательно не трогаем.
   "category": "Interface",
   "tweaks": [
-    {
-      "id": "interface.widgets",
-      "title": "Отключить виджеты",
-      "description": "Отключает виджеты политикой Windows. Скрытие кнопки не отключает всю функцию.",
-      "risk": "Caution",
-      "warning": "Windows может запретить изменение. Скрыть кнопку можно в параметрах панели задач.",
-      "impact": "Medium",
-      "requiresReboot": true,
-      "actions": [
-        { "type": "registry", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Dsh", "name": "AllowNewsAndInterests", "value": "0", "requiredPackage": "MicrosoftWindows.Client.WebExperience" }
-      ]
-    },
     {
       "id": "interface.tips",
       "title": "Отключить советы и рекомендации",

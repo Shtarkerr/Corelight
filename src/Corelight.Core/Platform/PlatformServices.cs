@@ -8,4 +8,5 @@ public sealed record PlatformServices(
     IAppxControl Apps,
     IPowerControl Power,
     IOneDriveControl OneDrive,
-    IComponentPresence? Components = null);
+    IComponentPresence? Components = null,
+    ICopilotDesktopControl? CopilotDesktop = null);
