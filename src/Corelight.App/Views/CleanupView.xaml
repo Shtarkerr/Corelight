@@ -50,7 +50,7 @@
             <StackPanel>
                 <TextBlock Style="{StaticResource PageTitle}" Text="Очистка диска" />
                 <TextBlock Style="{StaticResource SecondaryText}" Margin="0,6,0,0"
-                           Text="Откройте категорию и проверьте её файлы перед удалением." />
+                           Text="Откройте категорию и проверьте список перед удалением." />
             </StackPanel>
         </DockPanel>
 
@@ -123,7 +123,7 @@
                         <ui:Button Content="Открыть корзину" Command="{Binding OpenRecycleBinCommand}" Margin="0,8,0,0"
                                    HorizontalAlignment="Left" Visibility="{Binding IsRecycleBinCategory, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding VisibleFiles}" AutoGenerateColumns="False" CanUserAddRows="False"
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding VisibleItems}" AutoGenerateColumns="False" CanUserAddRows="False"
                               CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinRowHeight="36"
                               HorizontalGridLinesBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                               EnableRowVirtualization="True" EnableColumnVirtualization="True" SelectionMode="Single"
@@ -138,7 +138,7 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Файл" Binding="{Binding Name, Mode=OneWay}" SortMemberPath="Name" Width="*" IsReadOnly="True">
+                            <DataGridTextColumn Header="Название" Binding="{Binding Name, Mode=OneWay}" SortMemberPath="Name" Width="*" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -147,7 +147,7 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Размер" Binding="{Binding Size}" SortMemberPath="File.Bytes" Width="85" IsReadOnly="True">
+                            <DataGridTextColumn Header="Размер" Binding="{Binding Size}" SortMemberPath="Item.Bytes" Width="85" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextAlignment" Value="Right" />

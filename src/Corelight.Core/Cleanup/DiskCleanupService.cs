@@ -2,22 +2,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Corelight.Core.Cleanup;
 
-/// <summary>Очистка отделена от обратимых твиков: удаляются только файлы последнего анализа после выбора пользователя.</summary>
+/// <summary>Очистка удаляет только выбранные элементы последнего анализа.</summary>
 public sealed class DiskCleanupService
 {
     private readonly IReadOnlyList<CleanupRule> _rules;
     private readonly ICleanupShell _shell;
     private readonly ILogger<DiskCleanupService> _log;
     private readonly Func<string?>? _getDownloadsPath;
+    private readonly Func<IReadOnlyList<CleanupDirectoryScope>>? _getDirectoryScopes;
     private readonly SemaphoreSlim _gate = new(1);
     private CleanupScan? _lastScan;
     public IReadOnlyList<CleanupCategory> Categories => CleanupCatalog.Categories;
 
     public DiskCleanupService(ILogger<DiskCleanupService> log)
-        : this(CleanupCatalog.Rules(), new WindowsCleanupShell(), log, WindowsCleanupShell.GetDownloadsPath) { }
+        : this(CleanupCatalog.Rules(), new WindowsCleanupShell(), log, WindowsCleanupShell.GetDownloadsPath, CleanupCatalog.GetDirectoryScopes) { }
     internal DiskCleanupService(IReadOnlyList<CleanupRule> rules, ICleanupShell shell, ILogger<DiskCleanupService> log,
-        Func<string?>? getDownloadsPath = null)
-    { _rules = rules; _shell = shell; _log = log; _getDownloadsPath = getDownloadsPath; }
+        Func<string?>? getDownloadsPath = null, Func<IReadOnlyList<CleanupDirectoryScope>>? getDirectoryScopes = null)
+    { _rules = rules; _shell = shell; _log = log; _getDownloadsPath = getDownloadsPath; _getDirectoryScopes = getDirectoryScopes; }
 
     public async Task<CleanupScan> AnalyzeAsync(IProgress<string>? progress = null, CancellationToken ct = default)
     {
@@ -32,7 +33,7 @@ public sealed class DiskCleanupService
 
     private CleanupScan Analyze(IProgress<string>? progress, CancellationToken ct)
     {
-        var files = new List<CleanupFile>(); var issues = new List<CleanupIssue>();
+        var items = new List<CleanupItem>(); var issues = new List<CleanupIssue>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow;
         IEnumerable<CleanupRule> rules = _rules;
@@ -73,7 +74,7 @@ public sealed class DiskCleanupService
                                 if (DateTime.FromFileTimeUtc(stamp.Modified) > now - rule.MinimumAge || DateTime.FromFileTimeUtc(stamp.Creation) > now - rule.MinimumAge) continue;
                                 var target = rule.Filter == CleanupFilter.BrokenShortcuts ? _shell.BrokenShortcutTarget(path) : null;
                                 if (rule.Filter == CleanupFilter.BrokenShortcuts && target is null) continue;
-                                if (seen.Add(path)) files.Add(new(rule.CategoryId, path, stamp.Length) { Stamp = stamp, Rule = rule, ShortcutTarget = target });
+                                if (seen.Add(path)) items.Add(new(rule.CategoryId, path, stamp.Length) { Stamp = stamp, Rule = rule, ShortcutTarget = target });
                             }
                             catch (Exception ex) when (IsFileError(ex)) { AddIssue(issues, path, ex.Message); }
                         }
@@ -83,15 +84,52 @@ public sealed class DiskCleanupService
             }
             catch (Exception ex) when (IsFileError(ex)) { AddIssue(issues, rule.Root, ex.Message); }
         }
+        AnalyzeEmptyDirectories(items, issues, ct);
         RecycleBinState? recycle = null;
         try { recycle = _shell.QueryRecycleBin(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { AddIssue(issues, "Корзина", ex.Message); }
-        _log.LogInformation("Анализ очистки: {Files} файлов, {Bytes} байт, {Issues} замечаний", files.Count, files.Sum(f => f.Bytes), issues.Count);
-        return new(files.AsReadOnly(), issues.AsReadOnly(), recycle, now);
+        _log.LogInformation("Анализ очистки: {Items} элементов, {Bytes} байт, {Issues} замечаний", items.Count, items.Sum(item => item.Bytes), issues.Count);
+        return new(items.AsReadOnly(), issues.AsReadOnly(), recycle, now);
+    }
+
+    private void AnalyzeEmptyDirectories(List<CleanupItem> items, List<CleanupIssue> issues, CancellationToken ct)
+    {
+        foreach (var scope in GetDirectoryScopes(issues))
+        {
+            ct.ThrowIfCancellationRequested();
+            var rule = new CleanupRule(CleanupCatalog.ShortcutsId, scope.Root, TimeSpan.Zero);
+            try
+            {
+                if (!Directory.Exists(scope.Root)) continue;
+                CleanupFiles.EnsurePlainDirectory(scope.Root);
+                foreach (var path in Directory.EnumerateDirectories(scope.Root))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try
+                    {
+                        if (!scope.Includes(path) || CleanupFiles.InspectEmptyDirectory(path, scope.Root) is not { } stamp) continue;
+                        items.Add(new(rule.CategoryId, path, 0) { Stamp = stamp, Rule = rule, IsDirectory = true });
+                    }
+                    catch (Exception ex) when (IsFileError(ex)) { AddIssue(issues, path, ex.Message); }
+                }
+            }
+            catch (Exception ex) when (IsFileError(ex)) { AddIssue(issues, scope.Root, ex.Message); }
+        }
+    }
+
+    private IReadOnlyList<CleanupDirectoryScope> GetDirectoryScopes(List<CleanupIssue> issues)
+    {
+        try { return _getDirectoryScopes?.Invoke() ?? []; }
+        catch (Exception ex) when (IsFileError(ex) || ex is System.Runtime.InteropServices.COMException)
+        {
+            AddIssue(issues, "Пустые папки", ex.Message);
+            return [];
+        }
     }
 
     public async Task<CleanupResult> CleanAsync(CleanupScan scan, IReadOnlyCollection<string> selectedCategories,
-        IProgress<string>? progress = null, CancellationToken ct = default, IReadOnlySet<string>? excludedPaths = null)
+        IProgress<string>? progress = null, CancellationToken ct = default, IReadOnlySet<string>? excludedPaths = null,
+        IReadOnlySet<string>? selectedDirectories = null)
     {
         await _gate.WaitAsync(ct);
         try
@@ -101,35 +139,44 @@ public sealed class DiskCleanupService
             var selected = selectedCategories.ToHashSet(StringComparer.Ordinal);
             if (selected.Except(Categories.Select(c => c.Id)).Any()) throw new ArgumentException("Неизвестная категория очистки.");
             if (selected.Contains("recycle-bin") && scan.RecycleBin is null) throw new InvalidOperationException("Корзина не проверена. Снимите её выбор или повторите анализ.");
-            if (selected.Contains(CleanupCatalog.DownloadsId) && scan.Files.FirstOrDefault(f =>
+            if (selected.Contains(CleanupCatalog.DownloadsId) && scan.Items.FirstOrDefault(f =>
                     f.CategoryId == CleanupCatalog.DownloadsId && excludedPaths?.Contains(f.Path) != true) is { } download &&
                 !string.Equals(GetDownloadsRule()?.Root, download.Rule.Root, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Расположение папки «Загрузки» изменилось. Повторите анализ.");
             _lastScan = null; // Один подтверждённый анализ разрешает только одну попытку очистки.
-            return await Task.Run(() => Clean(scan, selected, excludedPaths, progress, ct), CancellationToken.None);
+            return await Task.Run(() => Clean(scan, selected, excludedPaths, selectedDirectories, progress, ct), CancellationToken.None);
         }
         finally { _gate.Release(); }
     }
 
     private CleanupRule? GetDownloadsRule() => CleanupCatalog.DownloadsRule(_getDownloadsPath?.Invoke(), _rules);
 
-    private CleanupResult Clean(CleanupScan scan, HashSet<string> selected, IReadOnlySet<string>? excluded, IProgress<string>? progress, CancellationToken ct)
+    private CleanupResult Clean(CleanupScan scan, HashSet<string> selected, IReadOnlySet<string>? excluded,
+        IReadOnlySet<string>? selectedDirectories, IProgress<string>? progress, CancellationToken ct)
     {
-        int deleted = 0, skipped = 0; long bytes = 0, released = 0;
+        int deleted = 0, skipped = 0, deletedDirectories = 0, skippedDirectories = 0; long bytes = 0, released = 0;
         var issues = new List<CleanupIssue>(); var emptied = false; long recycleBytes = 0;
-        foreach (var file in scan.Files.Where(f => selected.Contains(f.CategoryId) && excluded?.Contains(f.Path) != true))
+        var scopes = selected.Contains(CleanupCatalog.ShortcutsId) && selectedDirectories?.Count > 0 ? GetDirectoryScopes(issues) : [];
+        foreach (var item in scan.Items.Where(item => selected.Contains(item.CategoryId) && excluded?.Contains(item.Path) != true
+            && (!item.IsDirectory || selectedDirectories?.Contains(item.Path) == true)))
         {
             if (ct.IsCancellationRequested) break;
-            if ((deleted + skipped) % 64 == 0) progress?.Report($"Удалено файлов: {deleted}");
+            if ((deleted + skipped + deletedDirectories + skippedDirectories) % 64 == 0)
+                progress?.Report($"Удалено: файлов {deleted}, папок {deletedDirectories}");
             try
             {
-                released += CleanupFiles.Delete(file, () => file.ShortcutTarget is null || _shell.IsMissingTarget(file.ShortcutTarget));
-                deleted++; bytes += file.Bytes;
+                if (item.IsDirectory && !scopes.Any(scope => scope.Includes(item.Path)))
+                    throw new IOException("Расположение папки изменилось или теперь защищено. Повторите анализ.");
+                released += CleanupFiles.Delete(item, () => item.ShortcutTarget is null || _shell.IsMissingTarget(item.ShortcutTarget));
+                if (item.IsDirectory) deletedDirectories++;
+                else { deleted++; bytes += item.Bytes; }
             }
             catch (Exception ex) when (IsFileError(ex))
             {
-                skipped++; AddIssue(issues, file.Path, ex.Message);
-                if (skipped <= 20) _log.LogWarning("Пропуск очистки {Path}: {Reason}", file.Path, ex.Message);
+                if (item.IsDirectory) skippedDirectories++;
+                else skipped++;
+                AddIssue(issues, item.Path, ex.Message);
+                if (skipped + skippedDirectories <= 20) _log.LogWarning("Пропуск очистки {Path}: {Reason}", item.Path, ex.Message);
             }
         }
         if (selected.Contains("recycle-bin") && !ct.IsCancellationRequested)
@@ -143,8 +190,13 @@ public sealed class DiskCleanupService
             }
             catch (Exception ex) { AddIssue(issues, "Корзина", ex.Message); skipped++; _log.LogWarning(ex, "Не удалось завершить очистку корзины"); }
         }
-        _log.LogInformation("Очистка: удалено {Files}, данных {Bytes}, выделено на диске {Released}; пропущено {Skipped}; корзина {Recycle}; отменено {Cancelled}", deleted, bytes, released, skipped, emptied, ct.IsCancellationRequested);
-        return new(deleted, bytes, released, skipped, issues.AsReadOnly(), ct.IsCancellationRequested, emptied, recycleBytes);
+        _log.LogInformation("Очистка: удалено {Files} файлов и {Directories} папок, данных {Bytes}, выделено на диске {Released}; пропущено {Skipped}; корзина {Recycle}; отменено {Cancelled}",
+            deleted, deletedDirectories, bytes, released, skipped + skippedDirectories, emptied, ct.IsCancellationRequested);
+        return new(deleted, bytes, released, skipped, issues.AsReadOnly(), ct.IsCancellationRequested, emptied, recycleBytes)
+        {
+            DeletedDirectories = deletedDirectories,
+            SkippedDirectories = skippedDirectories,
+        };
     }
 
     private static bool MatchesName(CleanupRule rule, string path) => rule.Filter switch

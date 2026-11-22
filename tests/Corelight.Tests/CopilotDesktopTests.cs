@@ -25,7 +25,7 @@ public class CopilotDesktopTests
         var engine = new TweakEngine(system.Platform with { CopilotDesktop = desktop }, system.Backups, NullLogger<TweakEngine>.Instance);
         var catalog = TweakCatalog.LoadEmbedded();
         var tweak = catalog.Find("apps.copilot-desktop")!;
-        Assert.False(new TweakStatus(tweak, TweakState.NotApplied, null, tweak.Recommended).IsPreselected);
+        Assert.True(new TweakStatus(tweak, TweakState.NotApplied, null, tweak.Recommended).IsPreselected);
         Assert.Equal(TweakState.Applied, await engine.DetectAsync(catalog.Find("apps.copilot")!));
         Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
 

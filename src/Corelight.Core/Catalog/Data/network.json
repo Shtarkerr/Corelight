@@ -20,17 +20,6 @@
       "actions": [
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile", "name": "NetworkThrottlingIndex", "value": "0xFFFFFFFF", "requiredService": "MMCSS" }
       ]
-    },
-    {
-      "id": "network.nagle",
-      "title": "Отключить алгоритм Нейгла",
-      "description": "Нейгл объединяет мелкие TCP-пакеты, добавляя задержку. Большинство игр использует UDP или отключает его само: эффект обычно минимален.",
-      "warning": "Эффект не гарантирован и зависит от игры. Применяйте, если хотите проверить на своей системе.",
-      "risk": "Advanced",
-      "requiresReboot": true,
-      "actions": [
-        { "type": "tcpNoDelay" }
-      ]
     }
   ]
 }

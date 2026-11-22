@@ -25,7 +25,6 @@ public enum ActionState
 [JsonDerivedType(typeof(CopilotDesktopAction), "copilotDesktop")]
 [JsonDerivedType(typeof(OneDriveAction), "oneDrive")]
 [JsonDerivedType(typeof(PowerPlanAction), "powerPlan")]
-[JsonDerivedType(typeof(TcpNoDelayAction), "tcpNoDelay")]
 public abstract class TweakAction
 {
     /// <summary>Ошибка такого действия записывается в журнал, но не отменяет весь твик.</summary>

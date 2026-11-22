@@ -5,11 +5,19 @@ public sealed record CleanupCategory(string Id, string Title, string Description
 internal enum CleanupFilter { All, Thumbnails, Dumps, BrokenShortcuts }
 internal sealed record CleanupRule(string CategoryId, string Root, TimeSpan MinimumAge, CleanupFilter Filter = CleanupFilter.All);
 
-public sealed record CleanupFile(string CategoryId, string Path, long Bytes)
+internal sealed record CleanupDirectoryScope(string Root, IReadOnlyList<string> ProtectedPaths)
+{
+    internal bool Includes(string path) =>
+        string.Equals(Path.GetDirectoryName(path), Root, StringComparison.OrdinalIgnoreCase)
+        && !ProtectedPaths.Any(protectedPath => CleanupCatalog.IsSameOrWithin(protectedPath, path));
+}
+
+public sealed record CleanupItem(string CategoryId, string Path, long Bytes)
 {
     internal FileStamp Stamp { get; init; } = null!;
     internal CleanupRule Rule { get; init; } = null!;
     internal string? ShortcutTarget { get; init; }
+    public bool IsDirectory { get; internal init; }
 }
 
 public sealed record CleanupIssue(string Path, string Reason);
@@ -17,16 +25,20 @@ public sealed record RecycleBinState(long Bytes, long Items);
 
 public sealed class CleanupScan
 {
-    internal CleanupScan(IReadOnlyList<CleanupFile> files, IReadOnlyList<CleanupIssue> issues, RecycleBinState? recycleBin, DateTime time)
-    { Files = files; Issues = issues; RecycleBin = recycleBin; CreatedUtc = time; }
-    public IReadOnlyList<CleanupFile> Files { get; }
+    internal CleanupScan(IReadOnlyList<CleanupItem> items, IReadOnlyList<CleanupIssue> issues, RecycleBinState? recycleBin, DateTime time)
+    { Items = items; Issues = issues; RecycleBin = recycleBin; CreatedUtc = time; }
+    public IReadOnlyList<CleanupItem> Items { get; }
     public IReadOnlyList<CleanupIssue> Issues { get; }
     public RecycleBinState? RecycleBin { get; }
     public DateTime CreatedUtc { get; }
 }
 
 public sealed record CleanupResult(int DeletedFiles, long DeletedBytes, long ReleasedBytes,
-    int SkippedFiles, IReadOnlyList<CleanupIssue> Issues, bool Cancelled, bool RecycleBinEmptied, long RecycleBinBytes);
+    int SkippedFiles, IReadOnlyList<CleanupIssue> Issues, bool Cancelled, bool RecycleBinEmptied, long RecycleBinBytes)
+{
+    public int DeletedDirectories { get; internal init; }
+    public int SkippedDirectories { get; internal init; }
+}
 
 internal sealed record FileStamp(uint Volume, ulong Id, long Length, long Creation, long Modified, long Allocated);
 

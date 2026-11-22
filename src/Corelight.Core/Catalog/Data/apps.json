@@ -33,6 +33,7 @@
       "risk": "Caution",
       "warning": "Удаляйте, только если приложение вам не понадобится.",
       "recommended": true,
+      "preselected": true,
       "actions": [ { "type": "appx", "package": "Microsoft.BingNews", "storeId": "9WZDNCRFHVFW" } ]
     },
     {
@@ -99,6 +100,7 @@
       "risk": "Caution",
       "warning": "Удаляйте, только если приложение вам не понадобится.",
       "recommended": true,
+      "preselected": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MicrosoftOfficeHub", "storeId": "9WZDNCRD29V9" } ]
     },
     {
@@ -164,6 +166,7 @@
       "restoreHelpText": "Откройте инструкцию Microsoft и установите Copilot. Если вернётся настольная версия, повторите «Проверить возврат». Доступность прежнего варианта установки зависит от Microsoft.",
       "risk": "Caution",
       "recommended": true,
+      "preselected": true,
       "actions": [ { "type": "copilotDesktop" } ]
     },
     {
@@ -184,6 +187,7 @@
       "risk": "Caution",
       "warning": "Автовозврата нет. Удаляйте, если приложение больше не понадобится.",
       "recommended": true,
+      "preselected": true,
       "actions": [ { "type": "appx", "package": "Microsoft.549981C3F5F10" } ]
     },
     {
@@ -200,6 +204,7 @@
       "title": "Кино и ТВ",
       "description": "Устаревший видеоплеер с магазином фильмов. Локальные видео открывает и «Медиаплеер».",
       "recommended": true,
+      "preselected": false,
       "actions": [ { "type": "appx", "package": "Microsoft.ZuneVideo", "storeId": "9WZDNCRFJ3P2" } ]
     },
     {
@@ -209,6 +214,7 @@
       "risk": "Caution",
       "warning": "Автовозврата нет. После удаления старые совместимые VR-шлемы лишатся этого приложения.",
       "recommended": true,
+      "preselected": true,
       "actions": [ { "type": "appx", "package": "Microsoft.MixedReality.Portal" } ]
     },
     {

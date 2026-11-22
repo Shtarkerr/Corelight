@@ -56,6 +56,8 @@
       "title": "Родительский контроль",
       "description": "Применяет ограничения Microsoft Family к детским учётным записям.",
       "warning": "Если на этом ПК есть детская учётная запись, ограничения перестанут действовать.",
+      "recommended": true,
+      "preselected": true,
       "risk": "Caution",
       "actions": [ { "type": "service", "service": "WpcMonSvc", "startType": "Disabled" } ]
     },
@@ -66,14 +68,6 @@
       "warning": "На HDD программы и игры могут запускаться заметно медленнее.",
       "risk": "Advanced",
       "actions": [ { "type": "service", "service": "SysMain", "startType": "Disabled" } ]
-    },
-    {
-      "id": "services.search-indexer",
-      "title": "Индексатор поиска Windows",
-      "description": "Ускоряет поиск файлов, создавая индекс. Может нагружать CPU и диск, особенно после установки игр.",
-      "warning": "Поиск в «Проводнике» и «Пуске» замедлится; поиск по содержимому документов и писем перестанет работать.",
-      "risk": "Advanced",
-      "actions": [ { "type": "service", "service": "WSearch", "startType": "Disabled" } ]
     },
     {
       "id": "services.xbox-live",

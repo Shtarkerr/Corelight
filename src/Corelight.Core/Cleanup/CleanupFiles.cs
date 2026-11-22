@@ -5,15 +5,21 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Corelight.Core.Cleanup;
 
-/// <summary>Проверяет пути и удаляет открытый файл по дескриптору, а не повторно по имени.</summary>
+/// <summary>Проверяет пути и удаляет открытые файлы и пустые папки по дескриптору.</summary>
 internal static class CleanupFiles
 {
     private const uint ReadAttributes = 0x80, DeleteAccess = 0x10000, OpenExisting = 3;
     private const uint OpenReparsePoint = 0x200000, BackupSemantics = 0x2000000;
     private const FileAttributes UnsafeAttributes = FileAttributes.ReparsePoint | FileAttributes.Offline | FileAttributes.System | FileAttributes.ReadOnly | (FileAttributes)0x400000;
+    private const FileAttributes UnsafeDirectoryAttributes = UnsafeAttributes | FileAttributes.Hidden | FileAttributes.Encrypted | (FileAttributes)0x40000;
 
-    internal static bool IsWithin(string path, string root) =>
-        Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    internal static bool IsWithin(string path, string root)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var prefix = Path.GetFullPath(root);
+        if (!Path.EndsInDirectorySeparator(prefix)) prefix += Path.DirectorySeparatorChar;
+        return fullPath.Length > prefix.Length && fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
 
     internal static void ValidatePath(string path, string root)
     {
@@ -42,15 +48,26 @@ internal static class CleanupFiles
         return Stamp(handle);
     }
 
-    internal static long Delete(CleanupFile file, Func<bool> stillEligible)
+    internal static FileStamp? InspectEmptyDirectory(string path, string root)
     {
-        ValidatePath(file.Path, file.Rule.Root);
+        ValidatePath(path, root);
+        if (!IsOrdinaryDirectory(File.GetAttributes(path))) return null;
+        using var handle = Open(path, ReadAttributes, 1 | 2, true);
+        VerifyFinalPath(handle, path);
+        var stamp = Stamp(handle, directory: true);
+        if (Directory.EnumerateFileSystemEntries(path).Any() || HasDataStreams(handle)) return null;
+        return stamp;
+    }
+
+    internal static long Delete(CleanupItem item, Func<bool> stillEligible)
+    {
+        ValidatePath(item.Path, item.Rule.Root);
         var parents = new List<SafeFileHandle>();
         try
         {
             // Запрет переименования папок на время удаления защищает от подмены пути между проверкой и действием.
-            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(file.Rule.Root));
-            var directory = Path.GetDirectoryName(file.Path)!;
+            var root = item.IsDirectory ? Path.GetPathRoot(item.Path)! : Path.TrimEndingDirectorySeparator(Path.GetFullPath(item.Rule.Root));
+            var directory = Path.GetDirectoryName(item.Path)!;
             var paths = new Stack<string>();
             for (var current = directory; ; current = Path.GetDirectoryName(current)!)
             {
@@ -66,13 +83,14 @@ internal static class CleanupFiles
                 if (!GetFileInformationByHandle(parent, out var info)) ThrowLastError();
                 if ((info.Attributes & (uint)FileAttributes.ReparsePoint) != 0) throw new IOException("Папка-ссылка пропущена.");
             }
-            // Ни совместного чтения, ни записи: используемые файлы не трогаем.
-            using var handle = Open(file.Path, ReadAttributes | DeleteAccess, 0, false);
-            VerifyFinalPath(handle, file.Path);
-            var currentStamp = Stamp(handle);
-            if (currentStamp != file.Stamp) throw new IOException("Файл изменился после анализа; нужен новый анализ.");
-            if (!stillEligible()) throw new IOException("Файл больше не подходит для очистки.");
+            using var handle = Open(item.Path, ReadAttributes | DeleteAccess, 0, item.IsDirectory);
+            VerifyFinalPath(handle, item.Path);
+            var currentStamp = Stamp(handle, item.IsDirectory);
+            if (currentStamp != item.Stamp) throw new IOException("Элемент изменился после анализа; нужен новый анализ.");
+            if (!stillEligible() || item.IsDirectory && HasDataStreams(handle))
+                throw new IOException("Элемент больше не подходит для очистки.");
             var disposition = new Disposition { Delete = true };
+            // Windows проверяет пустоту папки одновременно с установкой признака удаления.
             if (!SetFileInformationByHandle(handle, 4, ref disposition, (uint)Marshal.SizeOf<Disposition>())) ThrowLastError();
             return currentStamp.Allocated;
         }
@@ -87,14 +105,28 @@ internal static class CleanupFiles
         throw new IOException(new Win32Exception(error).Message, new Win32Exception(error));
     }
 
-    private static FileStamp Stamp(SafeFileHandle handle)
+    private static bool IsOrdinaryDirectory(FileAttributes attributes) =>
+        (attributes & (UnsafeDirectoryAttributes | FileAttributes.Directory)) == FileAttributes.Directory;
+
+    private static bool HasDataStreams(SafeFileHandle handle)
+    {
+        var buffer = new byte[1024];
+        if (GetFileStreamInformation(handle, 7, buffer, (uint)buffer.Length)) return true;
+        var error = Marshal.GetLastWin32Error();
+        const int endOfFile = 38;
+        if (error == endOfFile) return false;
+        throw new IOException("Не удалось проверить потоки данных папки.", new Win32Exception(error));
+    }
+
+    private static FileStamp Stamp(SafeFileHandle handle, bool directory = false)
     {
         if (!GetFileInformationByHandle(handle, out var info)) ThrowLastError();
-        if (((FileAttributes)info.Attributes & (UnsafeAttributes | FileAttributes.Directory)) != 0 || info.Links != 1)
-            throw new IOException("Ссылка, защищённый или облачный файл пропущен.");
+        var attributes = (FileAttributes)info.Attributes;
+        if (info.Links != 1 || (directory ? !IsOrdinaryDirectory(attributes) : (attributes & (UnsafeAttributes | FileAttributes.Directory)) != 0))
+            throw new IOException("Ссылка, защищённый или облачный элемент пропущен.");
         if (!GetFileInformationByHandleEx(handle, 1, out var standard, (uint)Marshal.SizeOf<StandardInfo>())) ThrowLastError();
         return new(info.Volume, ((ulong)info.IndexHigh << 32) | info.IndexLow,
-            ((long)info.SizeHigh << 32) | info.SizeLow, Time(info.Creation), Time(info.Modified), standard.Allocation);
+            ((long)info.SizeHigh << 32) | info.SizeLow, Time(info.Creation), Time(info.Modified), directory ? 0 : standard.Allocation);
     }
 
     private static long Time(System.Runtime.InteropServices.ComTypes.FILETIME time) => ((long)time.dwHighDateTime << 32) | (uint)time.dwLowDateTime;
@@ -131,6 +163,9 @@ internal static class CleanupFiles
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, out StandardInfo info, uint size);
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "GetFileInformationByHandleEx")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileStreamInformation(SafeFileHandle file, int infoClass, [Out] byte[] buffer, uint size);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "GetFinalPathNameByHandleW")]
     private static extern uint GetFinalPathNameByHandle(SafeFileHandle file, StringBuilder path, uint size, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)]

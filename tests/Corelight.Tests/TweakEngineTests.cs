@@ -340,24 +340,4 @@ public class TweakEngineTests
         await engine.RevertAsync(tweak);
         Assert.Equal("AutoHDREnable=1;VRROptimizeEnable=0;", sys.Registry.GetValue(path, "DirectXUserGlobalSettings")!.Data);
     }
-
-    [Fact]
-    public async Task Tcp_no_delay_touches_only_interfaces_with_address()
-    {
-        var sys = new TestSystem();
-        var ifaces = TcpNoDelayAction.InterfacesKey;
-        sys.Registry.SetValue($@"{ifaces}\{{A}}", "DhcpIPAddress", RegValue.String("192.168.1.5"));
-        sys.Registry.SetValue($@"{ifaces}\{{B}}", "DhcpIPAddress", RegValue.String("0.0.0.0"));
-        sys.Registry.SetValue($@"{ifaces}\{{A}}", "TcpAckFrequency", RegValue.DWord(2));
-        var engine = sys.CreateEngine();
-        var tweak = TestSystem.Tweak(new TcpNoDelayAction());
-
-        await engine.ApplyAsync(tweak);
-        Assert.Equal("1", sys.Registry.GetValue($@"{ifaces}\{{A}}", "TCPNoDelay")!.Data);
-        Assert.Null(sys.Registry.GetValue($@"{ifaces}\{{B}}", "TCPNoDelay"));
-
-        await engine.RevertAsync(tweak);
-        Assert.Equal("2", sys.Registry.GetValue($@"{ifaces}\{{A}}", "TcpAckFrequency")!.Data);
-        Assert.Null(sys.Registry.GetValue($@"{ifaces}\{{A}}", "TCPNoDelay"));
-    }
 }

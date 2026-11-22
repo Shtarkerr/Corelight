@@ -47,6 +47,7 @@
       "title": "Отключить отчёты об ошибках Windows",
       "description": "Отключает сбор и отправку дампов сбоев в Microsoft. Стабильность программ не меняется.",
       "recommended": true,
+      "preselected": false,
       "actions": [
         { "type": "registry", "path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting", "name": "Disabled", "value": "1", "requiredService": "WerSvc" },
         { "type": "service", "service": "WerSvc", "startType": "Disabled", "optional": true }

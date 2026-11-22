@@ -3,6 +3,7 @@ namespace Corelight.Core.Cleanup;
 internal static class CleanupCatalog
 {
     internal const string DownloadsId = "downloads";
+    internal const string ShortcutsId = "shortcuts";
 
     internal static readonly IReadOnlyList<CleanupCategory> Categories = Array.AsReadOnly(new CleanupCategory[]
     {
@@ -12,7 +13,7 @@ internal static class CleanupCatalog
         new("shaders", "Кэш шейдеров DirectX", "После очистки первые запуски игр могут быть медленнее из-за пересоздания кэша.", false),
         new("error-reports", "Отчёты об ошибках Windows", "Старше 7 дней. Удалятся сохранённые отчёты, которые могут понадобиться для диагностики.", false),
         new("crash-dumps", "Дампы сбоев", "Старше 7 дней. Эти файлы помогают выяснять причины сбоев программ и Windows.", false),
-        new("shortcuts", "Неработающие ярлыки", "Рабочий стол и меню «Пуск». Только ссылки на отсутствующие файлы локальных дисков; проверьте список.", false),
+        new(ShortcutsId, "Неработающие ярлыки и пустые папки", "Ярлыки на рабочем столе и в меню «Пуск». Пустые папки на рабочем столе и в «Документах» выберите вручную.", false),
         new(DownloadsId, "Загрузки", "Файлы из «Загрузок» и вложенных папок. Снимите галочки с нужных файлов.", false),
         new("recycle-bin", "Корзина", "Полное удаление содержимого корзины текущей учётной записи на всех дисках, включая новые элементы.", false),
     });
@@ -38,9 +39,56 @@ internal static class CleanupCatalog
         foreach (var folder in new[] { Environment.SpecialFolder.DesktopDirectory, Environment.SpecialFolder.CommonDesktopDirectory, Environment.SpecialFolder.Programs, Environment.SpecialFolder.CommonPrograms })
         {
             var path = Environment.GetFolderPath(folder);
-            if (!string.IsNullOrWhiteSpace(path)) rules.Add(new("shortcuts", path, day, CleanupFilter.BrokenShortcuts));
+            if (!string.IsNullOrWhiteSpace(path)) rules.Add(new(ShortcutsId, path, day, CleanupFilter.BrokenShortcuts));
         }
         return rules.AsReadOnly();
+    }
+
+    internal static IReadOnlyList<CleanupDirectoryScope> GetDirectoryScopes()
+    {
+        const Environment.SpecialFolderOption option = Environment.SpecialFolderOption.DoNotVerify;
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory, option);
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments, option);
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, option);
+        var protectedPaths = Enum.GetValues<Environment.SpecialFolder>()
+            .Where(folder => folder is not (Environment.SpecialFolder.Desktop or Environment.SpecialFolder.DesktopDirectory
+                or Environment.SpecialFolder.MyDocuments or Environment.SpecialFolder.UserProfile))
+            .Select(folder => Environment.GetFolderPath(folder, option))
+            .Concat(new[] { WindowsCleanupShell.GetDownloadsPath() })
+            .Concat(new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" }.Select(Environment.GetEnvironmentVariable));
+        return DirectoryScopes(profile, desktop, documents, protectedPaths);
+    }
+
+    internal static IReadOnlyList<CleanupDirectoryScope> DirectoryScopes(string profile, string desktop, string documents,
+        IEnumerable<string?> protectedPaths)
+    {
+        if (!Path.IsPathFullyQualified(profile) || profile.StartsWith(@"\\", StringComparison.Ordinal)) return [];
+
+        var paths = protectedPaths.Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path!).ToArray();
+        var scopes = new List<CleanupDirectoryScope>(2);
+        if (DirectoryScope(desktop, Path.Combine(profile, "Desktop"), paths.Append(documents)) is { } desktopScope)
+            scopes.Add(desktopScope);
+        var standardDocuments = Path.Combine(profile, "Documents");
+        string[] appFolders = ["My Games", "PowerShell", "WindowsPowerShell"];
+        var protectedDocuments = paths.Append(desktop).Concat(appFolders.Select(name => Path.Combine(standardDocuments, name)));
+        if (DirectoryScope(documents, standardDocuments, protectedDocuments) is { } documentsScope)
+            scopes.Add(documentsScope);
+        return scopes;
+    }
+
+    private static CleanupDirectoryScope? DirectoryScope(string location, string expected, IEnumerable<string> protectedPaths)
+    {
+        if (!Path.IsPathFullyQualified(location) || location.StartsWith(@"\\", StringComparison.Ordinal))
+            return null;
+
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(location));
+        if (!string.Equals(root, Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase)
+            || new DriveInfo(Path.GetPathRoot(root)!).DriveType != DriveType.Fixed)
+            return null;
+
+        var paths = protectedPaths.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (paths.Any(path => IsSameOrWithin(root, path))) return null;
+        return new(root, paths.Where(path => CleanupFiles.IsWithin(path, root)).ToArray());
     }
 
     internal static CleanupRule? DownloadsRule(string? path, IReadOnlyList<CleanupRule> existingRules)
@@ -69,7 +117,7 @@ internal static class CleanupCatalog
         return new(DownloadsId, folder, TimeSpan.Zero);
     }
 
-    private static bool IsSameOrWithin(string path, string root) =>
+    internal static bool IsSameOrWithin(string path, string root) =>
         string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)), StringComparison.OrdinalIgnoreCase)
         || CleanupFiles.IsWithin(path, root);
 }

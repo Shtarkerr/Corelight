@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Corelight.App.Services;
+using Corelight.App.ViewModels;
 using Corelight.Core.Cleanup;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,6 +14,8 @@ public sealed class CleanupTests : IDisposable
     private readonly FakeShell _shell = new();
     private string Temp => Path.Combine(_root, "Temp");
     private string Cache => Path.Combine(_root, "Cache");
+    private string Desktop => Path.Combine(_root, "Desktop");
+    private string Documents => Path.Combine(_root, "Documents");
     private string Downloads => Path.Combine(_downloadsRoot ??= Path.Combine(AppContext.BaseDirectory, "Corelight-cleanup-" + Guid.NewGuid().ToString("N")), "Downloads");
     private DiskCleanupService Service(params CleanupRule[] rules) => new(rules.Length == 0
         ? [new("user-temp", Temp, TimeSpan.FromDays(7)), new("shaders", Cache, TimeSpan.FromDays(1))] : rules, _shell, NullLogger<DiskCleanupService>.Instance, () => _downloadsPath);
@@ -26,12 +30,25 @@ public sealed class CleanupTests : IDisposable
         return path;
     }
 
+    private string DesktopFolder(string name, int days = 14)
+    {
+        var path = Directory.CreateDirectory(Path.Combine(Desktop, name)).FullName;
+        var date = DateTime.UtcNow.AddDays(-days);
+        Directory.SetCreationTimeUtc(path, date);
+        Directory.SetLastWriteTimeUtc(path, date);
+        return path;
+    }
+
+    private DiskCleanupService DirectoryService(Func<IReadOnlyList<CleanupDirectoryScope>>? getScopes = null) => new(
+        [new("shortcuts", Desktop, TimeSpan.FromDays(1), CleanupFilter.BrokenShortcuts)],
+        _shell, NullLogger<DiskCleanupService>.Instance, getDirectoryScopes: getScopes ?? (() => CleanupCatalog.DirectoryScopes(_root, Desktop, Documents, [])));
+
     [Fact]
     public async Task Analysis_is_read_only_and_only_includes_old_files_in_allowed_roots()
     {
         var old = FileAt(Temp, "old.tmp"); var recent = FileAt(Temp, "recent.tmp", 0); var personal = FileAt(_root, "personal.txt");
         var scan = await Service().AnalyzeAsync();
-        Assert.Equal(old, Assert.Single(scan.Files).Path);
+        Assert.Equal(old, Assert.Single(scan.Items).Path);
         Assert.All(new[] { old, recent, personal }, path => Assert.True(File.Exists(path)));
     }
 
@@ -57,8 +74,8 @@ public sealed class CleanupTests : IDisposable
 
         var scan = await svc.AnalyzeAsync();
         Assert.False(svc.Categories.Single(c => c.Id == "downloads").DefaultSelected);
-        Assert.Equal(2, scan.Files.Count);
-        Assert.All(scan.Files, file => Assert.Equal("downloads", file.CategoryId));
+        Assert.Equal(2, scan.Items.Count);
+        Assert.All(scan.Items, file => Assert.Equal("downloads", file.CategoryId));
         await svc.CleanAsync(scan, svc.Categories.Where(c => c.DefaultSelected).Select(c => c.Id).ToArray());
         Assert.True(File.Exists(download));
 
@@ -80,7 +97,7 @@ public sealed class CleanupTests : IDisposable
         var redirected = FileAt(Path.Combine(_downloadsRoot!, "Other"), "new-location.zip");
         var svc = Service();
         var scan = await svc.AnalyzeAsync();
-        Assert.Equal(original, Assert.Single(scan.Files).Path);
+        Assert.Equal(original, Assert.Single(scan.Items).Path);
         _downloadsPath = Path.GetDirectoryName(redirected);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CleanAsync(scan, ["downloads"]));
@@ -96,7 +113,7 @@ public sealed class CleanupTests : IDisposable
         var regular = FileAt(Temp, "regular.tmp");
         var scan = await Service().AnalyzeAsync();
 
-        Assert.Equal(regular, Assert.Single(scan.Files).Path);
+        Assert.Equal(regular, Assert.Single(scan.Items).Path);
         Assert.Contains(scan.Issues, issue => issue.Path == "Загрузки");
     }
 
@@ -135,9 +152,9 @@ public sealed class CleanupTests : IDisposable
     {
         var path = FileAt(Temp, "linked.tmp"); var svc = Service(); var scan = await svc.AnalyzeAsync();
         Assert.True(CreateHardLink(Path.Combine(_root, "personal.txt"), path, IntPtr.Zero));
-        Assert.Empty((await svc.AnalyzeAsync()).Files);
+        Assert.Empty((await svc.AnalyzeAsync()).Items);
         // Старый снимок инвалидирован, но проверяем также исходный токен удаления напрямую.
-        Assert.Throws<IOException>(() => CleanupFiles.Delete(scan.Files[0], () => true));
+        Assert.Throws<IOException>(() => CleanupFiles.Delete(scan.Items[0], () => true));
         Assert.True(File.Exists(path));
     }
 
@@ -172,7 +189,7 @@ public sealed class CleanupTests : IDisposable
     {
         var shortcut = FileAt(Temp, "lost.lnk"); _shell.BrokenTarget = Path.Combine(_root, "target.exe");
         var svc = Service(new CleanupRule("shortcuts", Temp, TimeSpan.FromDays(1), CleanupFilter.BrokenShortcuts));
-        var scan = await svc.AnalyzeAsync(); Assert.Single(scan.Files);
+        var scan = await svc.AnalyzeAsync(); Assert.Single(scan.Items);
         _shell.Missing = false;
         var result = await svc.CleanAsync(scan, ["shortcuts"]);
         Assert.Equal(1, result.SkippedFiles); Assert.True(File.Exists(shortcut));
@@ -186,6 +203,162 @@ public sealed class CleanupTests : IDisposable
         var svc = Service(new CleanupRule("shortcuts", Temp, TimeSpan.FromDays(1), CleanupFilter.BrokenShortcuts));
         var result = await svc.CleanAsync(await svc.AnalyzeAsync(), ["shortcuts"]);
         Assert.Equal(1, result.DeletedFiles); Assert.False(File.Exists(shortcut)); Assert.True(File.Exists(document));
+    }
+
+    [Fact]
+    public async Task Analysis_offers_new_empty_folders_on_desktop_and_in_documents_outside_protected_paths()
+    {
+        var empty = DesktopFolder("Empty");
+        var recent = Directory.CreateDirectory(Path.Combine(Desktop, "Recent")).FullName;
+        var documentFolder = Directory.CreateDirectory(Path.Combine(Documents, "Recent")).FullName;
+        var appFolder = Directory.CreateDirectory(Path.Combine(Documents, "My Games")).FullName;
+        var hidden = DesktopFolder("Hidden");
+        File.SetAttributes(hidden, File.GetAttributes(hidden) | FileAttributes.Hidden);
+        var system = DesktopFolder("System");
+        File.SetAttributes(system, File.GetAttributes(system) | FileAttributes.System);
+        var redirected = DesktopFolder("AppData");
+        var protectedParent = DesktopFolder("Personal");
+        var nested = DesktopFolder(Path.Combine("Parent", "Empty"));
+        var config = FileAt(DesktopFolder("Configured"), "desktop.ini");
+        File.SetAttributes(config, FileAttributes.Hidden | FileAttributes.System);
+        var startMenu = Directory.CreateDirectory(Path.Combine(_root, "Start Menu", "Empty")).FullName;
+        var svc = DirectoryService(() => CleanupCatalog.DirectoryScopes(_root, Desktop, Documents, [redirected, Path.Combine(protectedParent, "Documents")]));
+
+        var scan = await svc.AnalyzeAsync();
+
+        Assert.Equal(new[] { empty, recent, documentFolder }.Order(), scan.Items.Select(item => item.Path).Order());
+        Assert.All(scan.Items, item => { Assert.Equal("shortcuts", item.CategoryId); Assert.True(item.IsDirectory); Assert.Equal(0, item.Bytes); });
+        Assert.All(new[] { empty, recent, documentFolder, appFolder, hidden, system, redirected, protectedParent, nested, startMenu },
+            path => Assert.True(Directory.Exists(path)));
+        Assert.True(File.Exists(config));
+        Assert.False(svc.Categories.Single(category => category.Id == "shortcuts").DefaultSelected);
+        var driveRoot = Path.GetPathRoot(_root)!;
+        Assert.Empty(CleanupCatalog.DirectoryScopes(_root, startMenu, driveRoot, []));
+        Assert.Empty(CleanupCatalog.DirectoryScopes(_root, Desktop, Documents, [driveRoot]));
+        Assert.False(Assert.Single(CleanupCatalog.DirectoryScopes(_root, Desktop, recent, [])).Includes(recent));
+    }
+
+    [Fact]
+    public async Task Cleanup_deletes_only_individually_selected_empty_folders_and_counts_them_separately()
+    {
+        var keep = DesktopFolder("Keep");
+        var remove = DesktopFolder("Remove");
+        var service = DirectoryService();
+
+        var scan = await service.AnalyzeAsync();
+        Assert.Equal(2, scan.Items.Count);
+        var categoryOnly = await service.CleanAsync(scan, ["shortcuts"]);
+        Assert.Equal(0, categoryOnly.DeletedDirectories);
+        Assert.True(Directory.Exists(remove));
+
+        scan = await service.AnalyzeAsync();
+        var result = await service.CleanAsync(scan, ["shortcuts"], selectedDirectories: new HashSet<string>([remove]));
+        Assert.Equal(1, result.DeletedDirectories);
+        Assert.Equal(0, result.DeletedFiles);
+        Assert.Equal(0, result.DeletedBytes);
+        Assert.False(Directory.Exists(remove));
+        Assert.True(Directory.Exists(keep));
+        Assert.True(Directory.Exists(Desktop));
+    }
+
+    [Fact]
+    public async Task Cleanup_page_requires_selection_of_both_folder_and_category()
+    {
+        var path = DesktopFolder("Empty");
+        var viewModel = new CleanupViewModel(DirectoryService(), new AppState(null!), null!, NullLogger<CleanupViewModel>.Instance);
+        var category = viewModel.Categories.Single(item => item.Category.Id == "shortcuts");
+        viewModel.SelectedCategory = category;
+
+        await viewModel.AnalyzeCommand.ExecuteAsync(null);
+
+        Assert.Equal("Неработающие ярлыки и пустые папки", category.Title);
+        var folder = Assert.Single(viewModel.VisibleItems);
+        Assert.Equal(path, folder.Path);
+        Assert.False(folder.IsSelected);
+        category.IsSelected = true;
+        Assert.False(viewModel.CanClean);
+        folder.IsSelected = true;
+        Assert.True(viewModel.CanClean);
+        Assert.Contains("папок 1", viewModel.SelectionSummary);
+        category.IsSelected = false;
+        Assert.False(viewModel.CanClean);
+    }
+
+    [Fact]
+    public async Task Cleanup_preserves_folders_that_are_replaced_filled_or_newly_protected()
+    {
+        var replaced = DesktopFolder("Replaced");
+        var changed = DesktopFolder("Changed");
+        var protectedPath = DesktopFolder("Protected");
+        IReadOnlyList<string> protectedPaths = [];
+        var service = DirectoryService(() => CleanupCatalog.DirectoryScopes(_root, Desktop, Documents, protectedPaths));
+        var scan = await service.AnalyzeAsync();
+        Assert.Equal(3, scan.Items.Count);
+
+        var original = Path.Combine(Desktop, "Original");
+        Directory.Move(replaced, original);
+        Directory.CreateDirectory(replaced);
+        Directory.SetCreationTimeUtc(replaced, Directory.GetCreationTimeUtc(original));
+        Directory.SetLastWriteTimeUtc(replaced, Directory.GetLastWriteTimeUtc(original));
+        var modified = Directory.GetLastWriteTimeUtc(changed);
+        var added = FileAt(changed, "Added.txt");
+        Directory.SetLastWriteTimeUtc(changed, modified);
+        protectedPaths = [protectedPath];
+
+        var result = await service.CleanAsync(scan, ["shortcuts"], selectedDirectories: new HashSet<string>([replaced, changed, protectedPath]));
+
+        Assert.Equal(0, result.DeletedDirectories);
+        Assert.Equal(3, result.SkippedDirectories);
+        Assert.All(new[] { original, replaced, changed, protectedPath }, path => Assert.True(Directory.Exists(path)));
+        Assert.True(File.Exists(added));
+    }
+
+    [Fact]
+    public async Task Directories_with_alternate_data_streams_are_preserved()
+    {
+        var existing = DesktopFolder("WithStream");
+        var changed = DesktopFolder("Changed");
+        File.WriteAllText(existing + ":metadata", "keep");
+        Directory.SetLastWriteTimeUtc(existing, DateTime.UtcNow.AddDays(-14));
+        var service = DirectoryService();
+        var scan = await service.AnalyzeAsync();
+        Assert.Equal(changed, Assert.Single(scan.Items).Path);
+
+        var modified = Directory.GetLastWriteTimeUtc(changed);
+        File.WriteAllText(changed + ":metadata", "keep");
+        Directory.SetLastWriteTimeUtc(changed, modified);
+        var result = await service.CleanAsync(scan, ["shortcuts"], selectedDirectories: new HashSet<string>([changed]));
+
+        Assert.Equal(1, result.SkippedDirectories);
+        Assert.Equal("keep", File.ReadAllText(changed + ":metadata"));
+        Assert.Equal("keep", File.ReadAllText(existing + ":metadata"));
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Directory_link_is_excluded_from_analysis_and_cannot_replace_a_selected_folder()
+    {
+        var candidate = DesktopFolder("Candidate");
+        var target = Directory.CreateDirectory(Path.Combine(_root, "External")).FullName;
+        var link = Path.Combine(Desktop, "Link");
+        Directory.CreateSymbolicLink(link, target);
+        try
+        {
+            var service = DirectoryService();
+            var scan = await service.AnalyzeAsync();
+            Assert.Equal(candidate, Assert.Single(scan.Items).Path);
+            Directory.Move(candidate, Path.Combine(_root, "Original"));
+            Directory.CreateSymbolicLink(candidate, target);
+            try
+            {
+                var result = await service.CleanAsync(scan, ["shortcuts"], selectedDirectories: new HashSet<string>([candidate]));
+                Assert.Equal(1, result.SkippedDirectories);
+                Assert.True(Directory.Exists(candidate));
+                Assert.True(Directory.Exists(target));
+            }
+            finally { Directory.Delete(candidate); }
+        }
+        finally { Directory.Delete(link); }
     }
 
     [Fact]
@@ -210,7 +383,7 @@ public sealed class CleanupTests : IDisposable
         {
             var result = await svc.CleanAsync(scan, ["user-temp"]);
             Assert.Equal(1, result.SkippedFiles); Assert.True(File.Exists(Path.Combine(moved, "data.tmp")));
-            Assert.Empty((await svc.AnalyzeAsync()).Files);
+            Assert.Empty((await svc.AnalyzeAsync()).Items);
         }
         finally { Directory.Delete(sub); }
     }
@@ -247,7 +420,7 @@ public sealed class CleanupTests : IDisposable
         }
         finally { Marshal.FinalReleaseComObject(shell); }
         var svc = new DiskCleanupService([new("shortcuts", Temp, TimeSpan.FromDays(1), CleanupFilter.BrokenShortcuts)], new WindowsCleanupShell(), NullLogger<DiskCleanupService>.Instance);
-        var scan = await svc.AnalyzeAsync(); Assert.Single(scan.Files);
+        var scan = await svc.AnalyzeAsync(); Assert.Single(scan.Items);
         var result = await svc.CleanAsync(scan, ["shortcuts"]);
         Assert.Equal(1, result.DeletedFiles); Assert.True(File.Exists(Path.Combine(Temp, "valid.lnk")));
         Assert.True(File.Exists(validTarget));

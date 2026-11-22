@@ -260,15 +260,25 @@ public class ScanningTests
     [Theory]
     [InlineData("interface.widgets")]
     [InlineData("apps.web-experience")]
-    public void Widget_entries_are_absent_from_catalog(string id)
+    [InlineData("network.nagle")]
+    [InlineData("services.search-indexer")]
+    public void Retired_optimizations_are_absent_from_catalog(string id)
     {
         Assert.Null(TweakCatalog.LoadEmbedded().Find(id));
     }
 
     [Theory]
+    [InlineData("apps.bing-news")]
+    [InlineData("apps.office-hub")]
     [InlineData("apps.outlook-new")]
     [InlineData("apps.teams-personal")]
+    [InlineData("apps.copilot-desktop")]
+    [InlineData("apps.cortana")]
+    [InlineData("apps.mixed-reality")]
+    [InlineData("interface.background-apps")]
     [InlineData("gaming.game-dvr")]
+    [InlineData("gaming.mouse-precision")]
+    [InlineData("services.parental-controls")]
     public void Requested_defaults_are_selected_and_explain_lost_functionality(string id)
     {
         var tweak = TweakCatalog.LoadEmbedded().Find(id)!;
@@ -283,7 +293,7 @@ public class ScanningTests
     public void Other_optional_features_remain_manual_choices()
     {
         var catalog = TweakCatalog.LoadEmbedded();
-        foreach (var id in new[] { "gaming.mouse-precision", "gaming.power-ultimate", "apps.xbox-game-bar" })
+        foreach (var id in new[] { "apps.movies-tv", "gaming.hags", "privacy.error-reporting", "gaming.power-ultimate", "apps.xbox-game-bar" })
         {
             var status = new TweakStatus(catalog.Find(id)!, TweakState.NotApplied, null, true);
             Assert.False(status.IsPreselected);

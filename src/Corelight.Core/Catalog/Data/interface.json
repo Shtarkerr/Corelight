@@ -46,6 +46,7 @@
       "description": "Запрещает закрытым приложениям Store работать в фоне. Steam, Discord и браузеры не затрагиваются.",
       "warning": "Закрытые приложения Store, включая Почту, Связь с телефоном и WhatsApp, не будут присылать уведомления.",
       "recommended": true,
+      "preselected": true,
       "risk": "Caution",
       "impact": "Medium",
       "actions": [
