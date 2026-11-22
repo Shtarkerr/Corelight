@@ -51,7 +51,7 @@ public sealed class DiskCleanupService
             progress?.Report(Categories.First(c => c.Id == rule.CategoryId).Title);
             try
             {
-                if (!Directory.Exists(rule.Root)) continue;
+                if (!Path.IsPathFullyQualified(rule.Root) || !Directory.Exists(rule.Root)) continue;
                 CleanupFiles.EnsurePlainDirectory(rule.Root);
                 var pending = new Stack<string>(); pending.Push(rule.Root);
                 while (pending.Count > 0)

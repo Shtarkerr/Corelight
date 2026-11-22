@@ -52,7 +52,7 @@ public static class GuardrailValidator
         // Магазин, лицензии и игровая инфраструктура, без которой не запускаются игры.
         "AppXSvc", "ClipSVC", "LicenseManager", "InstallService", "GamingServices", "GamingServicesNet", "XboxGipSvc",
         // Античиты и игровые клиенты.
-        "vgc", "vgk", "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService", "FACEIT", "faceit", "Steam Client Service",
+        "vgc", "vgk", "EasyAntiCheat", "EasyAntiCheat_EOS", "BEService", "FACEIT", "Steam Client Service",
         "EAAntiCheatService", "PnkBstrA", "PnkBstrB",
         // Ядро системы.
         "RpcSs", "DcomLaunch", "RpcEptMapper", "LSM", "Winmgmt", "EventLog", "Schedule", "Power", "PlugPlay",

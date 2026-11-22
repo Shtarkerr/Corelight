@@ -42,6 +42,23 @@ public sealed class BackupStoreTests : IDisposable
         Assert.Equal("{ это не json", File.ReadAllText(store.CorruptCopyPath));
     }
 
+    [Fact]
+    public void Failed_replace_preserves_history_and_removes_temporary_file()
+    {
+        var store = new JsonBackupStore(FilePath);
+        store.Save(new BackupRecord { TweakId = "a", Title = "Исходное", AppliedAt = DateTimeOffset.Now, Actions = [] });
+
+        using (File.Open(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var error = Record.Exception(() => store.Remove("a"));
+            Assert.True(error is IOException or UnauthorizedAccessException, error?.ToString());
+        }
+
+        Assert.NotNull(store.Get("a"));
+        Assert.NotNull(new JsonBackupStore(FilePath).Get("a"));
+        Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_dir))

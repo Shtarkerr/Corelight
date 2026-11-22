@@ -118,7 +118,7 @@ public sealed partial class AdvancedViewModel(
             ? $"Приложение «{item.Title}» будет удалено."
             : item.Description;
         if (item.Tweak.Actions.OfType<AppxPackageAction>().Any())
-            text += " Изменение затронет всех пользователей этого ПК.";
+            text += " Перед удалением Corelight проверит доступность через Microsoft Store. Изменение затронет всех пользователей этого ПК.";
         if (item.HasWarning)
             text += "\n\n" + item.Warning;
         if (item.HasAvailabilityNote)

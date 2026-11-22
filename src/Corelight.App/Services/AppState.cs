@@ -51,8 +51,9 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
     public async Task<ScanReport> RefreshTweakStatusesAsync()
     {
         var version = ChangeVersion;
+        var userScanVersion = UserScanVersion;
         var report = await scanner.ScanAsync(await GetHardwareAsync());
-        if (LastScan is { } previous)
+        if (version == ChangeVersion && userScanVersion == UserScanVersion && LastScan is { } previous)
         {
             if (!previous.Statuses.SequenceEqual(report.Statuses))
                 LastScan = report;

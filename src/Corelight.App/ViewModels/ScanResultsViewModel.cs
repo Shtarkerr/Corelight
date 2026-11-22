@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Corelight.App.Services;
+using Corelight.Core.Actions;
 using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
 
@@ -88,15 +89,21 @@ public sealed partial class ScanResultsViewModel(
     private async Task ApplyAsync()
     {
         var selected = SelectableItems.Where(i => i.IsSelected).Select(i => i.Tweak).ToList();
+        var restoreHint = selected.Any(tweak => tweak.Category == TweakCategory.Apps)
+            ? " Для возврата некоторых приложений понадобится интернет или ручная установка."
+            : "";
+        var appRemoval = selected.Any(tweak => tweak.Actions.Any(action => action is AppxPackageAction))
+            ? "\n\nПеред удалением AppX Corelight проверит доступность через Microsoft Store. Пакеты удаляются для всех пользователей."
+            : "";
         var confirmed = await dialogs.ConfirmAsync(
             "Применить изменения?",
             $"Будет применено изменений: {selected.Count}.\n\n" +
-            "Настройки сохранятся в истории; Corelight попробует создать точку восстановления. Возврат приложений может требовать интернета и ручной установки. AppX удаляются для всех пользователей, возвращаются текущему.",
+            "Настройки сохранятся в истории. Corelight попробует создать точку восстановления." + restoreHint + appRemoval,
             "Применить");
         if (!confirmed)
             return;
 
-        // Если пользователь отменил операцию на шаге точки восстановления, система не менялась —
+        // Если пользователь отменил операцию до её начала, система не менялась —
         // оставляем список и его галочки как есть.
         var version = state.ChangeVersion;
         await coordinator.ApplyAsync(selected, showSummary: true);

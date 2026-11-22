@@ -74,6 +74,26 @@ public sealed class RollbackTests
     }
 
     [Fact]
+    public async Task Reapply_failure_restores_pre_attempt_state_and_keeps_original_history()
+    {
+        var sys = new TestSystem();
+        var action = new MutableAction();
+        var tweak = TestSystem.Tweak(action);
+        var engine = sys.CreateEngine();
+        await engine.ApplyAsync(tweak);
+        var original = sys.Backups.Get(tweak.Id);
+
+        action.Value = 7;
+        action.ApplyFailure = new InvalidOperationException("retry failed");
+        await Assert.ThrowsAsync<TweakException>(() => engine.ApplyAsync(tweak));
+
+        Assert.Equal(7, action.Value);
+        Assert.Same(original, sys.Backups.Get(tweak.Id));
+        await engine.RevertAsync(tweak);
+        Assert.Equal(5, action.Value);
+    }
+
+    [Fact]
     public async Task Optional_partial_failure_is_rolled_back_when_later_required_action_fails()
     {
         var sys = new TestSystem();
@@ -116,8 +136,8 @@ public sealed class RollbackTests
 
     private sealed class MutableAction : TweakAction
     {
-        public int Value { get; private set; } = 5;
-        public Exception? ApplyFailure { get; init; }
+        public int Value { get; set; } = 5;
+        public Exception? ApplyFailure { get; set; }
         public bool RevertFails { get; set; }
         public bool CaptureFailsAfterChange { get; init; }
 

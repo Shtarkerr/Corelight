@@ -93,6 +93,7 @@ internal sealed class FakeApps : IAppxControl
     public bool DenyProvisioning { get; set; }
     public List<string> StoreInstalls { get; } = [];
     public Dictionary<string, string> StorePackages { get; } = [];
+    public Func<string, CancellationToken, Task<StoreRestoreAvailability>>? OnRestoreCheck { get; set; }
 
     public bool DelayRemovalUntilRefresh { get; set; }
 
@@ -103,6 +104,9 @@ internal sealed class FakeApps : IAppxControl
     }
 
     public bool IsInstalled(string packageName) => Installed.Contains(packageName) || Provisioned.ContainsKey(packageName);
+
+    public Task<StoreRestoreAvailability> CheckStoreRestoreAsync(string storeId, CancellationToken ct) =>
+        OnRestoreCheck?.Invoke(storeId, ct) ?? Task.FromResult(StoreRestoreAvailability.Found);
 
     public string? GetProvisionedFamily(string packageName) => Provisioned.GetValueOrDefault(packageName);
 

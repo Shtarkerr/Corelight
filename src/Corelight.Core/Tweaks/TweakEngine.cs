@@ -20,6 +20,7 @@ public sealed class TweakException(string message, Exception? inner = null) : Ex
 /// <param name="Warnings">Ошибки необязательных действий, которые не помешали применить твик.</param>
 public sealed record TweakResult(IReadOnlyList<string> Warnings, bool Confirmed = true, bool RequiresReboot = false);
 public sealed record TweakDetection(TweakState State, string? Error = null);
+public sealed record AppRestoreIssue(TweakDefinition Tweak, string Reason);
 
 public sealed class TweakEngine(PlatformServices platform, IBackupStore backups, ILogger<TweakEngine> log)
 {
@@ -31,6 +32,79 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         platform.Components?.Refresh();
     }
     public IBackupStore Backups => backups;
+
+    /// <summary>Проверяет доступность возврата установленных AppX до применения выбранных изменений.</summary>
+    public async Task<IReadOnlyList<AppRestoreIssue>> CheckAppRestoresAsync(
+        IReadOnlyList<TweakDefinition> tweaks, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var candidates = tweaks.Select(tweak => (Tweak: tweak, Packages: tweak.Actions.OfType<AppxPackageAction>().ToArray()))
+            .Where(candidate => candidate.Packages.Length > 0).ToArray();
+        if (candidates.Length == 0) return [];
+
+        Dictionary<string, bool> installed;
+        try
+        {
+            platform.Apps.Refresh();
+            installed = candidates.SelectMany(candidate => candidate.Packages)
+                .Select(package => package.Package).Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(package => package, platform.Apps.IsInstalled, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "Не удалось проверить установленные пакеты перед удалением");
+            return candidates.Select(candidate => new AppRestoreIssue(candidate.Tweak, "Не удалось проверить установленные пакеты.")).ToArray();
+        }
+
+        var storeIds = candidates.SelectMany(candidate => candidate.Packages)
+            .Where(package => installed[package.Package]).Select(package => package.StoreId).OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var results = new ConcurrentDictionary<string, StoreRestoreAvailability>(StringComparer.OrdinalIgnoreCase);
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            await Parallel.ForEachAsync(storeIds, new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = budget.Token },
+                async (id, token) =>
+                {
+                    try { results[id] = await platform.Apps.CheckStoreRestoreAsync(id, token); }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        log.LogWarning(ex, "Ошибка проверки возврата приложения Store {StoreId}", id);
+                        results[id] = StoreRestoreAvailability.Unverified;
+                    }
+                });
+        }
+        catch (OperationCanceledException) when (budget.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            log.LogInformation("Достигнут общий предел времени проверки возврата AppX");
+        }
+        ct.ThrowIfCancellationRequested();
+
+        var issues = new List<AppRestoreIssue>();
+        foreach (var (tweak, packages) in candidates)
+        {
+            var reasons = packages.Where(package => installed[package.Package])
+                .Select(package => package.StoreId is { } id
+                    ? DescribeRestoreAvailability(results.GetValueOrDefault(id, StoreRestoreAvailability.TimedOut))
+                    : tweak.RestoreHelpUrl is null ? "Автоматического возврата нет." : "Возврат только вручную.")
+                .OfType<string>().Distinct().ToArray();
+            if (reasons.Length > 0)
+                issues.Add(new(tweak, string.Join(" ", reasons)));
+        }
+        return issues;
+    }
+
+    private static string? DescribeRestoreAvailability(StoreRestoreAvailability availability) => availability switch
+    {
+        StoreRestoreAvailability.Found => null,
+        StoreRestoreAvailability.NotFound => "WinGet не нашёл приложение в Microsoft Store.",
+        StoreRestoreAvailability.NoApplicableInstaller => "WinGet не нашёл подходящий установщик.",
+        StoreRestoreAvailability.AgreementsRequired => "WinGet требует принять условия источника Microsoft Store.",
+        StoreRestoreAvailability.WinGetUnavailable => "WinGet недоступен.",
+        StoreRestoreAvailability.TimedOut => "Проверка не завершилась вовремя.",
+        _ => "Доступность через Microsoft Store не подтверждена.",
+    };
 
     public async Task<TweakState> DetectAsync(TweakDefinition tweak, CancellationToken ct = default) =>
         (await DetectDetailedAsync(tweak, ct)).State;
@@ -62,7 +136,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         // Состояние определяют обязательные действия.
         // Варианты одного приложения (например, старый/новый Teams) считаются установленными,
         // пока присутствует хотя бы один пакет; optional влияет на обработку ошибок, а не на наличие.
-        var required = relevant.Where(s => !s.Action.Optional || s.Action is Corelight.Core.Actions.AppxPackageAction).ToList();
+        var required = relevant.Where(s => !s.Action.Optional || s.Action is AppxPackageAction).ToList();
         if (required.Count > 0)
             return new(required.All(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied);
 
@@ -105,7 +179,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             createdRecord = true;
         }
 
-        var attempted = new List<int>();
+        var attempted = new List<(int Index, string? Before)>();
         var optionalFailures = new HashSet<int>();
         var warnings = new List<string>();
         try
@@ -119,8 +193,9 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
 
                 try
                 {
+                    var before = createdRecord ? record.Actions[i].State : await action.CaptureAsync(platform, ct);
                     // Действие может успеть изменить систему перед исключением.
-                    attempted.Add(i);
+                    attempted.Add((i, before));
                     await action.ApplyAsync(platform, ct);
                 }
                 catch (Exception ex) when (action.Optional && ex is not (OperationCanceledException or AppxOperationTimeoutException))
@@ -147,14 +222,14 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             var rollbackErrors = new List<string>();
             for (var j = attempted.Count - 1; j >= 0; j--)
             {
-                var i = attempted[j];
+                var (i, before) = attempted[j];
                 try
                 {
                     // Например, отказ в доступе мог произойти до изменения цели.
-                    if (await MatchesBackupAsync(tweak.Actions[i], record.Actions[i].State, CancellationToken.None))
+                    if (await MatchesBackupAsync(tweak.Actions[i], before, CancellationToken.None))
                         continue;
-                    await tweak.Actions[i].RevertAsync(platform, record.Actions[i].State, CancellationToken.None);
-                    if (!await MatchesBackupAsync(tweak.Actions[i], record.Actions[i].State, CancellationToken.None))
+                    await tweak.Actions[i].RevertAsync(platform, before, CancellationToken.None);
+                    if (!await MatchesBackupAsync(tweak.Actions[i], before, CancellationToken.None))
                         throw new InvalidOperationException($"Возврат {tweak.Actions[i].Describe()} пока не подтверждён.");
                 }
                 catch (Exception rollbackEx)
@@ -175,7 +250,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
 
         var confirmed = true;
         var unconfirmed = new HashSet<int>();
-        foreach (var i in attempted)
+        foreach (var (i, _) in attempted)
         {
             if (optionalFailures.Contains(i)) continue;
             if (await ConfirmAppliedAsync(tweak.Actions[i], ct)) continue;
@@ -183,7 +258,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             warnings.Add($"Результат для «{tweak.Actions[i].Describe()}» пока не подтверждён. Бэкап сохранён; проверьте состояние после перезагрузки.");
             if (!tweak.Actions[i].Optional) confirmed = false;
         }
-        var servicePending = unconfirmed.Any(i => tweak.Actions[i] is Corelight.Core.Actions.ServiceStartupAction { LastStopPending: true });
+        var servicePending = unconfirmed.Any(i => tweak.Actions[i] is ServiceStartupAction { LastStopPending: true });
         if (servicePending)
             warnings.Add("Одна из служб не остановилась сразу; для завершения отключения перезагрузите Windows.");
         return new TweakResult(warnings, confirmed, servicePending);
@@ -192,7 +267,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
     private async Task<bool> ConfirmAppliedAsync(TweakAction action, CancellationToken ct)
     {
         var detected = await SafeDetectAsync(action, ct);
-        if (action is Corelight.Core.Actions.AppxPackageAction)
+        if (action is AppxPackageAction)
         {
             // Windows can finish removing the package in the background after the deployment returns.
             for (var attempt = 0; attempt < 4 && detected == ActionState.NotApplied; attempt++)

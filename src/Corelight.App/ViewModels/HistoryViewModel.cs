@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -159,7 +160,7 @@ public sealed partial class HistoryViewModel(
     {
         try
         {
-            Process.Start(new ProcessStartInfo("rstrui.exe") { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "rstrui.exe")) { UseShellExecute = true });
         }
         catch (Exception ex)
         {

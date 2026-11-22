@@ -191,7 +191,12 @@ public sealed partial class CleanupViewModel : ObservableObject
 
     [RelayCommand] private void SelectNone() { foreach (var c in Categories) c.IsSelected = false; }
     [RelayCommand] private void ResetSelection() { foreach (var c in Categories) c.IsSelected = c.Category.DefaultSelected; }
-    [RelayCommand] private void OpenRecycleBin() => Process.Start(new ProcessStartInfo("explorer.exe", "shell:RecycleBinFolder") { UseShellExecute = true });
+    [RelayCommand]
+    private void OpenRecycleBin()
+    {
+        var explorer = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        Process.Start(new ProcessStartInfo(explorer, "shell:RecycleBinFolder") { UseShellExecute = true });
+    }
     [RelayCommand] private Task ShowIssuesAsync() => _dialogs.ShowInfoAsync("Пропуски и замечания",
         string.Join("\n\n", _issues.Take(100).Select(i => $"{i.Path}\n{i.Reason}")) + (_issues.Count > 100 ? "\n\nПоказаны первые 100 записей." : ""));
     private void SetIssues(IReadOnlyList<CleanupIssue> issues) { _issues = issues; HasIssues = issues.Count > 0; }

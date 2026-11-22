@@ -1,4 +1,5 @@
 using Corelight.Core.Platform;
+using Microsoft.Win32;
 
 namespace Corelight.Core.Startup;
 
@@ -45,8 +46,10 @@ public sealed class StartupManager(IRegistryAccess registry)
             {
                 if (name.Length == 0 || Protected.Contains(name))
                     continue;
-                var command = registry.GetValue(source.RunKey, name)?.Data ?? "";
-                items.Add(Create(name, command, source.Location, source.ApprovedKey));
+                var command = registry.GetValue(source.RunKey, name);
+                if (command is { Kind: RegistryValueKind.String or RegistryValueKind.ExpandString }
+                    && !string.IsNullOrWhiteSpace(command.Data))
+                    items.Add(Create(name, command.Data, source.Location, source.ApprovedKey));
             }
         }
 
@@ -63,7 +66,7 @@ public sealed class StartupManager(IRegistryAccess registry)
         data[0] = enabled ? (byte)0x02 : (byte)0x03;
         if (!enabled)
             BitConverter.TryWriteBytes(data.AsSpan(4), DateTime.UtcNow.ToFileTimeUtc());
-        registry.SetValue(item.ApprovedKey, item.Name, new RegValue(Microsoft.Win32.RegistryValueKind.Binary, Convert.ToHexString(data)));
+        registry.SetValue(item.ApprovedKey, item.Name, new RegValue(RegistryValueKind.Binary, Convert.ToHexString(data)));
     }
 
     private void AddFolder(List<StartupItem> items, string folder, string approvedKey, string location)
@@ -84,7 +87,7 @@ public sealed class StartupManager(IRegistryAccess registry)
     {
         // Значение не того типа или пустое Windows игнорирует — программа при этом запускается.
         var approved = registry.GetValue(approvedKey, name);
-        var enabled = approved is not { Kind: Microsoft.Win32.RegistryValueKind.Binary, Data.Length: >= 2 }
+        var enabled = approved is not { Kind: RegistryValueKind.Binary, Data.Length: >= 2 }
             || (Convert.FromHexString(approved.Data[..2])[0] & 1) == 0;
         var known = KnownUpdaters.Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase));
         return new StartupItem(name, command, location, approvedKey, enabled, known) { DisplayName = ToDisplayName(name) };

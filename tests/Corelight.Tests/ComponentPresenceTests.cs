@@ -24,6 +24,19 @@ public class ComponentPresenceTests
         Assert.Equal(executableExists, await probe.IsPresentAsync(WindowsComponent.Edge, default));
     }
 
+    [Theory]
+    [InlineData("msedge.exe")]
+    [InlineData(@"C:\CustomEdge\other.exe")]
+    [InlineData(@"\\server\share\msedge.exe")]
+    public async Task Edge_probe_ignores_unrelated_or_non_local_registrations(string executable)
+    {
+        var registry = new FakeRegistry();
+        registry.SetValue(@"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe", "", RegValue.String(executable));
+        var probe = new WindowsComponentPresence(registry, new FeatureRunner()) { FileExists = path => path == executable };
+
+        Assert.False(await probe.IsPresentAsync(WindowsComponent.Edge, default));
+    }
+
     [Fact]
     public async Task Catalog_does_not_suggest_absent_apps_services_or_tasks()
     {
@@ -159,7 +172,7 @@ public class ComponentPresenceTests
         public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken ct = default)
         {
             Calls++;
-            Assert.Equal("powershell.exe", fileName);
+            Assert.Equal(ProcessRunner.WindowsPowerShell, fileName);
             Assert.Contains("Get-WindowsOptionalFeature", arguments.Last());
             return Task.FromResult(new ProcessResult(0, Output, ""));
         }

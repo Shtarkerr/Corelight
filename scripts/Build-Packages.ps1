@@ -25,8 +25,8 @@ try {
     $version = @($project.Project.PropertyGroup.Version | Where-Object { $_ })[0]
     if ($version -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw 'Неподдерживаемая версия проекта.' }
     # Inno Setup ограничивает текстовую версию продукта 50 символами.
-    $revision = (& git rev-parse --short=16 HEAD).Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Не удалось прочитать ревизию Git.' }
+    $revision = & git rev-parse --short=16 HEAD
+    if ($LASTEXITCODE -ne 0 -or $revision -notmatch '^[0-9a-f]+$') { throw 'Не удалось прочитать ревизию Git.' }
     $changes = & git status --porcelain
     if ($LASTEXITCODE -ne 0) { throw 'Не удалось прочитать состояние Git.' }
     $suffix = ''

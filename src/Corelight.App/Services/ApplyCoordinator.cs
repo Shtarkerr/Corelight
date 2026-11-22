@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Corelight.Core.Actions;
 using Corelight.Core.Catalog;
 using Corelight.Core.SystemInfo;
 using Corelight.Core.Tweaks;
@@ -26,15 +27,48 @@ public sealed class ApplyCoordinator(
     {
         if (tweaks.Count == 0)
             return true;
-        if (!await EnsureRestorePointAsync())
+        var checkedTweaks = await ConfirmAppRemovalsAsync(tweaks);
+        if (checkedTweaks is null || checkedTweaks.Count == 0 || !await EnsureRestorePointAsync())
             return false;
-        return await RunAsync(tweaks, apply: true, showSummary);
+        return await RunAsync(checkedTweaks, apply: true, showSummary, skippedApps: tweaks.Count - checkedTweaks.Count);
+    }
+
+    private async Task<IReadOnlyList<TweakDefinition>?> ConfirmAppRemovalsAsync(IReadOnlyList<TweakDefinition> tweaks)
+    {
+        if (!tweaks.Any(tweak => tweak.Actions.Any(action => action is AppxPackageAction))) return tweaks;
+
+        using var cancel = new CancellationTokenSource();
+        IReadOnlyList<AppRestoreIssue> issues;
+        try
+        {
+            using (state.BeginBusy("Проверка возврата приложений через Microsoft Store…", cancel.Cancel))
+                issues = await Task.Run(() => engine.CheckAppRestoresAsync(tweaks, cancel.Token), cancel.Token);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+        {
+            return null;
+        }
+        if (cancel.IsCancellationRequested) return null;
+        if (issues.Count == 0) return tweaks;
+
+        var text = new StringBuilder();
+        foreach (var group in issues.GroupBy(issue => issue.Reason))
+            text.AppendLine($"• {string.Join(", ", group.Select(issue => issue.Tweak.Title))} — {group.Key}");
+        text.AppendLine().Append("«Пропустить» оставит эти приложения на ПК. Остальные выбранные изменения можно применить.");
+
+        var choice = await dialogs.ShowAsync("Возврат приложений не подтверждён", text.ToString(), "Пропустить", "Всё равно удалить");
+        return choice switch
+        {
+            DialogChoice.Primary => tweaks.Except(issues.Select(issue => issue.Tweak)).ToArray(),
+            DialogChoice.Secondary => tweaks,
+            _ => null,
+        };
     }
 
     public Task<bool> RevertAsync(IReadOnlyList<TweakDefinition> tweaks, bool showSummary) =>
         tweaks.Count == 0 ? Task.FromResult(true) : RunAsync(tweaks, apply: false, showSummary);
 
-    private async Task<bool> RunAsync(IReadOnlyList<TweakDefinition> tweaks, bool apply, bool showSummary)
+    private async Task<bool> RunAsync(IReadOnlyList<TweakDefinition> tweaks, bool apply, bool showSummary, int skippedApps = 0)
     {
         var failures = new List<string>();
         var warnings = new List<string>();
@@ -88,9 +122,9 @@ public sealed class ApplyCoordinator(
             state.MarkSystemChanged();
         }
 
-        if (failures.Count > 0 || pending > 0 || warnings.Count > 0 || showSummary)
-            await ShowSummaryAsync(apply, succeeded, pending, notStarted, failures, warnings);
-        return failures.Count == 0 && pending == 0;
+        if (failures.Count > 0 || pending > 0 || warnings.Count > 0 || skippedApps > 0 || showSummary)
+            await ShowSummaryAsync(apply, succeeded, pending, notStarted, failures, warnings, skippedApps);
+        return failures.Count == 0 && pending == 0 && skippedApps == 0;
     }
 
     private async Task<bool> EnsureRestorePointAsync()
@@ -152,10 +186,11 @@ public sealed class ApplyCoordinator(
         return true;
     }
 
-    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, int notStarted, List<string> failures, List<string> warnings)
+    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, int notStarted, List<string> failures, List<string> warnings, int skippedApps)
     {
         var text = new StringBuilder();
         text.AppendLine(apply ? $"Применено изменений: {succeeded}." : $"Отменено изменений: {succeeded}.");
+        if (skippedApps > 0) text.AppendLine($"Пропущено приложений: {skippedApps}.");
         if (pending > 0) text.AppendLine($"Результат пока не подтверждён: {pending}.");
         if (notStarted > 0) text.AppendLine($"Остальные изменения не запускались: {notStarted}. Проверьте состояние приложения в истории перед повторной попыткой.");
         if (failures.Count > 0)
@@ -175,7 +210,7 @@ public sealed class ApplyCoordinator(
         if (state.RebootRequired)
             text.AppendLine().Append("Часть изменений вступит в силу после перезагрузки.");
 
-        var title = failures.Count > 0 ? "Готово, но с ошибками" : pending > 0 || warnings.Count > 0 ? "Готово с замечаниями" : "Готово";
+        var title = failures.Count > 0 ? "Готово, но с ошибками" : pending > 0 || warnings.Count > 0 || skippedApps > 0 ? "Готово с замечаниями" : "Готово";
         return dialogs.ShowInfoAsync(title, text.ToString().TrimEnd());
     }
 }

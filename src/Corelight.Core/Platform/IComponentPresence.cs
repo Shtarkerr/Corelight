@@ -51,14 +51,18 @@ public sealed class WindowsComponentPresence(IRegistryAccess registry, IProcessR
         foreach (var key in new[] { @"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe", @"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe", @"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe" })
         {
             var path = registry.GetValue(key, "")?.Data;
-            if (!string.IsNullOrWhiteSpace(path)) yield return Environment.ExpandEnvironmentVariables(path.Trim('"'));
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            var expanded = Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+            if (Path.IsPathFullyQualified(expanded) && !expanded.StartsWith(@"\\", StringComparison.Ordinal)
+                && Path.GetFileName(expanded).Equals("msedge.exe", StringComparison.OrdinalIgnoreCase))
+                yield return expanded;
         }
     }
 
     private async Task<bool> RecallEnabledAsync(CancellationToken ct)
     {
         // Только чтение. Вывод enum не зависит от языка Windows; номер сборки не доказывает наличие Recall.
-        var result = await runner.RunAsync("powershell.exe",
+        var result = await runner.RunAsync(ProcessRunner.WindowsPowerShell,
             ["-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; (Get-WindowsOptionalFeature -Online -FeatureName Recall -ErrorAction Stop).State.ToString()"],
             TimeSpan.FromSeconds(45), ct);
         if (!result.Succeeded)

@@ -44,31 +44,34 @@ public sealed class Scanner(TweakCatalog catalog, TweakEngine engine, HardwarePr
 
     public Task<HardwareProfile> ProbeHardwareAsync(CancellationToken ct = default) => Task.Run(probe.Probe, ct);
 
-    public async Task<ScanReport> ScanAsync(HardwareProfile hardware, IProgress<double>? progress = null, CancellationToken ct = default)
-    {
-        engine.RefreshExternalState();
-        var statuses = new List<TweakStatus>(catalog.Tweaks.Count);
-        for (var i = 0; i < catalog.Tweaks.Count; i++)
-        {
-            ct.ThrowIfCancellationRequested();
-            statuses.Add(await EvaluateAsync(catalog.Tweaks[i], hardware, ct));
-            progress?.Report((i + 1) / (double)catalog.Tweaks.Count);
-        }
-        return new ScanReport(hardware, statuses);
-    }
-
-    public Task<TweakStatus> EvaluateAsync(TweakDefinition tweak, HardwareProfile hardware, CancellationToken ct = default) =>
+    public Task<ScanReport> ScanAsync(HardwareProfile hardware, IProgress<double>? progress = null, CancellationToken ct = default) =>
         Task.Run(async () =>
         {
-            var reason = UnavailableReason(tweak, hardware);
-            var detection = reason is null ? await engine.DetectDetailedAsync(tweak, ct) : new TweakDetection(TweakState.NotApplicable);
-            if (detection.State == TweakState.Unknown)
-                reason = "Не удалось проверить состояние: " + detection.Error;
-            else if (detection.State == TweakState.NotApplied)
-                reason = engine.GetApplyConflictReason(tweak, catalog.Tweaks);
-            var recommended = tweak.Recommended && tweak.RecommendWhen.All(hardware.Satisfies);
-            return new TweakStatus(tweak, detection.State, reason, recommended);
+            engine.RefreshExternalState();
+            var statuses = new List<TweakStatus>(catalog.Tweaks.Count);
+            for (var i = 0; i < catalog.Tweaks.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                statuses.Add(await EvaluateCoreAsync(catalog.Tweaks[i], hardware, ct));
+                progress?.Report((i + 1) / (double)catalog.Tweaks.Count);
+            }
+            return new ScanReport(hardware, statuses);
         }, ct);
+
+    public Task<TweakStatus> EvaluateAsync(TweakDefinition tweak, HardwareProfile hardware, CancellationToken ct = default) =>
+        Task.Run(() => EvaluateCoreAsync(tweak, hardware, ct), ct);
+
+    private async Task<TweakStatus> EvaluateCoreAsync(TweakDefinition tweak, HardwareProfile hardware, CancellationToken ct)
+    {
+        var reason = UnavailableReason(tweak, hardware);
+        var detection = reason is null ? await engine.DetectDetailedAsync(tweak, ct) : new TweakDetection(TweakState.NotApplicable);
+        if (detection.State == TweakState.Unknown)
+            reason = "Не удалось проверить состояние: " + detection.Error;
+        else if (detection.State == TweakState.NotApplied)
+            reason = engine.GetApplyConflictReason(tweak, catalog.Tweaks);
+        var recommended = tweak.Recommended && tweak.RecommendWhen.All(hardware.Satisfies);
+        return new TweakStatus(tweak, detection.State, reason, recommended);
+    }
 
     private static string? UnavailableReason(TweakDefinition tweak, HardwareProfile hardware)
     {

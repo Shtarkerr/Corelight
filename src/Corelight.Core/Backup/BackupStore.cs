@@ -94,9 +94,28 @@ public sealed class JsonBackupStore : IBackupStore
     private void Flush(IEnumerable<BackupRecord> records)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(records, Options));
-        File.Move(temp, _path, overwrite: true);
+        var temp = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        try
+        {
+            using (stream)
+            {
+                JsonSerializer.Serialize(stream, records, Options);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temp, _path, overwrite: true);
+        }
+        catch
+        {
+            TryDeleteTemporaryFile(temp);
+            throw;
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string path)
+    {
+        try { File.Delete(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private static Dictionary<string, BackupRecord> Load(string path)

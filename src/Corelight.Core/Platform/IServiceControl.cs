@@ -38,16 +38,18 @@ public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunn
         var start = registry.GetValue(ServicesKey + serviceName, "Start");
         if (start is null)
             return null;
+        if (start.Kind != Microsoft.Win32.RegistryValueKind.DWord)
+            throw new InvalidDataException($"Некорректный тип параметра Start службы {serviceName}.");
 
-        var delayed = registry.GetValue(ServicesKey + serviceName, "DelayedAutostart");
         return uint.Parse(start.Normalize().Data) switch
         {
             0 => ServiceStartType.Boot,
             1 => ServiceStartType.System,
-            2 when delayed?.Normalize().Data == "1" => ServiceStartType.AutomaticDelayed,
+            2 when registry.GetValue(ServicesKey + serviceName, "DelayedAutostart")?.Normalize().Data == "1" => ServiceStartType.AutomaticDelayed,
             2 => ServiceStartType.Automatic,
             3 => ServiceStartType.Manual,
-            _ => ServiceStartType.Disabled,
+            4 => ServiceStartType.Disabled,
+            _ => throw new InvalidDataException($"Неизвестный тип запуска службы {serviceName}."),
         };
     }
 
@@ -68,9 +70,11 @@ public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunn
             ServiceStartType.Automatic => "auto",
             ServiceStartType.AutomaticDelayed => "delayed-auto",
             ServiceStartType.Manual => "demand",
-            _ => "disabled",
+            ServiceStartType.Disabled => "disabled",
+            _ => throw new ArgumentOutOfRangeException(nameof(startType)),
         };
-        var result = await runner.RunAsync("sc.exe", ["config", serviceName, "start=", mode], TimeSpan.FromSeconds(30), ct);
+        var result = await runner.RunAsync(Path.Combine(Environment.SystemDirectory, "sc.exe"),
+            ["config", serviceName, "start=", mode], TimeSpan.FromSeconds(30), ct);
         // Код выхода sc.exe — это код ошибки Win32, у которого есть готовое описание на языке системы.
         if (!result.Succeeded)
             throw new InvalidOperationException($"Не удалось изменить тип запуска службы {serviceName}: {new Win32Exception(result.ExitCode).Message}");
@@ -86,7 +90,7 @@ public sealed class WindowsServiceControl(IRegistryAccess registry, IProcessRunn
             if (sc.Status != ServiceControllerStatus.StopPending)
             {
                 if (!sc.CanStop) return false;
-                sc.Stop();
+                sc.Stop(stopDependentServices: false);
             }
             sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15));
             return true;

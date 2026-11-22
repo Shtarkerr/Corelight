@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.ComponentModel;
 using Microsoft.Extensions.Logging.Abstractions;
 using Corelight.Core.Actions;
 using Corelight.Core.Platform;
@@ -7,18 +9,110 @@ namespace Corelight.Tests;
 
 public class AppRestoreTests
 {
+    private const string WinGet = @"C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_fixture\winget.exe";
+
     [Theory]
     [InlineData(unchecked((int)0x8A150014), "Приложение не найдено")]
     [InlineData(unchecked((int)0x8A150010), "нет подходящего установщика")]
     public async Task Store_lookup_failures_offer_manual_recovery(int code, string explanation)
     {
-        var apps = new WindowsAppxControl(new FailedInstaller(code), NullLogger<WindowsAppxControl>.Instance);
+        var apps = new WindowsAppxControl(new FailedInstaller(code), NullLogger<WindowsAppxControl>.Instance) { FindWinGet = () => WinGet };
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => apps.InstallFromStoreAsync("test-id"));
 
         Assert.Contains(explanation, exception.Message);
         Assert.Contains("Открыть в Store", exception.Message);
         Assert.Contains("откат", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(0, StoreRestoreAvailability.Found)]
+    [InlineData(unchecked((int)0x8A150014), StoreRestoreAvailability.NotFound)]
+    [InlineData(unchecked((int)0x8A150010), StoreRestoreAvailability.NoApplicableInstaller)]
+    [InlineData(unchecked((int)0x8A150046), StoreRestoreAvailability.AgreementsRequired)]
+    [InlineData(unchecked((int)0x8A150045), StoreRestoreAvailability.Unverified)]
+    public async Task Store_check_uses_metadata_and_exit_codes_without_installing(int code, StoreRestoreAvailability expected)
+    {
+        var runner = new StoreRunner(() => new ProcessResult(code, "", ""));
+        var apps = new WindowsAppxControl(runner, NullLogger<WindowsAppxControl>.Instance) { FindWinGet = () => WinGet };
+
+        Assert.Equal(expected, await apps.CheckStoreRestoreAsync("test-id", CancellationToken.None));
+        Assert.Equal(WinGet, runner.FileName);
+        Assert.Equal(["show", "--id", "test-id", "--source", "msstore", "--exact", "--disable-interactivity"], runner.Arguments);
+    }
+
+    [Theory]
+    [InlineData(false, StoreRestoreAvailability.WinGetUnavailable)]
+    [InlineData(true, StoreRestoreAvailability.TimedOut)]
+    public async Task Store_check_reports_missing_winget_or_timeout(bool timeout, StoreRestoreAvailability expected)
+    {
+        Exception failure = timeout ? new TimeoutException() : new Win32Exception(2);
+        var runner = new StoreRunner(() => throw failure);
+        var apps = new WindowsAppxControl(runner, NullLogger<WindowsAppxControl>.Instance) { FindWinGet = () => WinGet };
+
+        Assert.Equal(expected, await apps.CheckStoreRestoreAsync("test-id", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Store_check_does_not_fall_back_to_path_when_app_installer_is_missing()
+    {
+        var runner = new StoreRunner(() => new ProcessResult(0, "", ""));
+        var apps = new WindowsAppxControl(runner, NullLogger<WindowsAppxControl>.Instance) { FindWinGet = () => null };
+
+        Assert.Equal(StoreRestoreAvailability.WinGetUnavailable, await apps.CheckStoreRestoreAsync("test-id", CancellationToken.None));
+        Assert.Null(runner.FileName);
+    }
+
+    [Fact]
+    public async Task Pre_removal_check_skips_absent_packages_and_warns_for_each_affected_choice()
+    {
+        var sys = new TestSystem();
+        var queries = new ConcurrentBag<string>();
+        sys.Apps.OnRestoreCheck = (id, _) =>
+        {
+            queries.Add(id);
+            return Task.FromResult(id == "missing" ? StoreRestoreAvailability.NotFound : StoreRestoreAvailability.Found);
+        };
+        sys.Apps.Installed.UnionWith(["First", "Second", "Manual"]);
+        sys.Apps.Provisioned["Provisioned"] = "Provisioned_family";
+        var first = TestSystem.Tweak(new AppxPackageAction { Package = "First", StoreId = "missing" },
+            new AppxPackageAction { Package = "AlsoAbsent", Optional = true });
+        var second = TestSystem.Tweak(new AppxPackageAction { Package = "Second", StoreId = "missing" });
+        var manual = TestSystem.Tweak(new AppxPackageAction { Package = "Manual" });
+        var found = TestSystem.Tweak(new AppxPackageAction { Package = "Provisioned", StoreId = "found" });
+        var absent = TestSystem.Tweak(new AppxPackageAction { Package = "Absent", StoreId = "unused" });
+        var setting = TestSystem.Tweak(new ServiceStartupAction { Service = "Example" });
+
+        var issues = await sys.CreateEngine().CheckAppRestoresAsync([first, second, manual, found, absent, setting]);
+
+        Assert.Equal(["found", "missing"], queries.Order());
+        Assert.Collection(issues,
+            issue => { Assert.Same(first, issue.Tweak); Assert.Equal("WinGet не нашёл приложение в Microsoft Store.", issue.Reason); },
+            issue => { Assert.Same(second, issue.Tweak); Assert.Equal("WinGet не нашёл приложение в Microsoft Store.", issue.Reason); },
+            issue => { Assert.Same(manual, issue.Tweak); Assert.Equal("Автоматического возврата нет.", issue.Reason); });
+        Assert.Equal(["First", "Manual", "Second"], sys.Apps.Installed.Order());
+        Assert.Empty(sys.Apps.StoreInstalls);
+        Assert.Empty(sys.Backups.GetAll());
+    }
+
+    [Fact]
+    public async Task Pre_removal_check_honors_cancellation_during_the_catalog_lookup()
+    {
+        var sys = new TestSystem();
+        using var cancel = new CancellationTokenSource();
+        sys.Apps.Installed.Add("First");
+        sys.Apps.OnRestoreCheck = (_, ct) =>
+        {
+            cancel.Cancel();
+            return Task.FromCanceled<StoreRestoreAvailability>(ct);
+        };
+        var tweak = TestSystem.Tweak(new AppxPackageAction { Package = "First", StoreId = "first" });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => sys.CreateEngine().CheckAppRestoresAsync([tweak], cancel.Token));
+
+        Assert.Contains("First", sys.Apps.Installed);
+        Assert.Empty(sys.Backups.GetAll());
     }
 
     [Fact]
@@ -148,6 +242,19 @@ public class AppRestoreTests
             => Task.FromResult(new ProcessResult(code, "No package found matching input criteria.", ""));
     }
 
+    private sealed class StoreRunner(Func<ProcessResult> result) : IProcessRunner
+    {
+        public string? FileName { get; private set; }
+        public IReadOnlyList<string>? Arguments { get; private set; }
+
+        public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken ct = default)
+        {
+            FileName = fileName;
+            Arguments = arguments;
+            return Task.FromResult(result());
+        }
+    }
+
     private sealed class TimedOutApp : IAppxControl
     {
         private readonly HashSet<string> _installed = ["First.Teams", "Second.Teams"];
@@ -163,6 +270,7 @@ public class AppRestoreTests
             return Task.CompletedTask;
         }
         public Task InstallFromStoreAsync(string storeId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<StoreRestoreAvailability> CheckStoreRestoreAsync(string storeId, CancellationToken ct) => throw new NotSupportedException();
     }
 
     private sealed class ExternallyInstalledApp : IAppxControl
@@ -172,6 +280,7 @@ public class AppRestoreTests
         public void Refresh() => _cachedInstalled = true;
         public bool IsInstalled(string packageName) => _cachedInstalled;
         public Task RemoveAsync(string packageName, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<StoreRestoreAvailability> CheckStoreRestoreAsync(string storeId, CancellationToken ct) => throw new NotSupportedException();
         public Task InstallFromStoreAsync(string storeId, CancellationToken ct = default)
         {
             InstallerCalled = true;

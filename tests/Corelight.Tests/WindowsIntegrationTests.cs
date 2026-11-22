@@ -96,7 +96,8 @@ public sealed class WindowsIntegrationTests : IDisposable
         if (CultureInfo.CurrentCulture.TextInfo.OEMCodePage != 866)
             return;
 
-        var result = await _runner.RunAsync("cmd.exe", ["/c", "echo Привет"], TimeSpan.FromSeconds(10));
+        var result = await _runner.RunAsync(Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+            ["/c", "echo Привет"], TimeSpan.FromSeconds(10));
 
         Assert.Contains("Привет", result.Output);
     }

@@ -40,7 +40,7 @@ public sealed partial class WindowsPowerControl(IProcessRunner runner) : IPowerC
 
     private async Task<ProcessResult> RunAsync(CancellationToken ct, params string[] args)
     {
-        var result = await runner.RunAsync("powercfg.exe", args, Timeout, ct);
+        var result = await runner.RunAsync(Path.Combine(Environment.SystemDirectory, "powercfg.exe"), args, Timeout, ct);
         if (!result.Succeeded)
             throw new InvalidOperationException($"powercfg {string.Join(' ', args)} завершился с кодом {result.ExitCode}. {result.Output.Trim()}");
         return result;

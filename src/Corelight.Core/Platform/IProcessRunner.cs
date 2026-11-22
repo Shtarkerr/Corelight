@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 
@@ -18,9 +19,14 @@ public sealed class ProcessRunner : IProcessRunner
 {
     // Консольные утилиты Windows (sc, powercfg) пишут в OEM-кодировке — для русской системы это 866, а не UTF-8.
     private static readonly Encoding OemEncoding = CreateOemEncoding();
+    internal static string WindowsPowerShell => Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
 
     public async Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        if (!Path.IsPathFullyQualified(fileName))
+            throw new ArgumentException("Нужен полный путь к исполняемому файлу.", nameof(fileName));
+
         var psi = new ProcessStartInfo(fileName)
         {
             UseShellExecute = false,
@@ -44,16 +50,17 @@ public sealed class ProcessRunner : IProcessRunner
         try
         {
             await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            await Task.WhenAll(stdout, stderr).WaitAsync(timeoutCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            try { process.Kill(entireProcessTree: true); }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception) { }
             if (ct.IsCancellationRequested)
                 throw;
             throw new TimeoutException($"{Path.GetFileName(fileName)} не завершился за {timeout.TotalSeconds:0} с.");
         }
 
-        await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
         return new ProcessResult(process.ExitCode, output.ToString(), error.ToString());
     }
 

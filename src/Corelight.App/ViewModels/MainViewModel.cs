@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -86,7 +87,9 @@ public sealed partial class MainViewModel : ObservableObject
         if (!confirmed)
             return;
 
-        await _runner.RunAsync("shutdown.exe", ["/r", "/t", "0"], TimeSpan.FromSeconds(30));
+        var result = await _runner.RunAsync(Path.Combine(Environment.SystemDirectory, "shutdown.exe"), ["/r", "/t", "0"], TimeSpan.FromSeconds(30));
+        if (!result.Succeeded)
+            await _dialogs.ShowInfoAsync("Перезагрузка не запущена", $"Windows вернула код {result.ExitCode}. {result.Error.Trim()}".TrimEnd());
     }
 
     [RelayCommand]
