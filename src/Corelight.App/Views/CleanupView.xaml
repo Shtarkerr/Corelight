@@ -4,6 +4,22 @@
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
     <UserControl.Resources>
+        <Style x:Key="CleanupList" TargetType="DataGrid" BasedOn="{StaticResource {x:Type DataGrid}}">
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="CanUserResizeColumns" Value="False" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="MinRowHeight" Value="36" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="EnableRowVirtualization" Value="True" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="RowBackground" Value="Transparent" />
+            <Setter Property="AlternatingRowBackground" Value="Transparent" />
+        </Style>
         <Style x:Key="CleanupCategoryTile" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="12,10" />
             <Setter Property="Margin" Value="0,0,8,8" />
@@ -46,12 +62,9 @@
 
         <DockPanel Margin="0,0,0,18">
             <ui:Button DockPanel.Dock="Right" VerticalAlignment="Bottom" Margin="16,0,0,0"
-                       Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Анализировать" Command="{Binding AnalyzeCommand}" />
-            <StackPanel>
-                <TextBlock Style="{StaticResource PageTitle}" Text="Очистка диска" />
-                <TextBlock Style="{StaticResource SecondaryText}" Margin="0,6,0,0"
-                           Text="Откройте категорию и проверьте список перед удалением." />
-            </StackPanel>
+                       Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Повторить анализ" Command="{Binding AnalyzeCommand}"
+                       Visibility="{Binding HasAnalysis, Converter={StaticResource BoolToVisibility}}" />
+            <TextBlock Style="{StaticResource PageTitle}" Text="Очистка диска" />
         </DockPanel>
 
         <Grid Grid.Row="1">
@@ -94,7 +107,7 @@
                                     <TextBlock Text="{Binding Summary}" Style="{StaticResource CaptionText}" Margin="0,3,0,0" />
                                 </StackPanel>
                                 <CheckBox Grid.Row="2" HorizontalAlignment="Right"
-                                          IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                           ToolTip="Включить в очистку"
                                           AutomationProperties.Name="{Binding Title, StringFormat=Включить в очистку: {0}}" />
                             </Grid>
@@ -103,7 +116,7 @@
                 </ListBox>
                 <DockPanel Grid.Row="2" Margin="0,3,0,0">
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0">
-                        <ui:Button Content="По умолчанию" Command="{Binding ResetSelectionCommand}" Appearance="Transparent" />
+                        <ui:Button Content="Выбрать все" Command="{Binding SelectAllCommand}" Appearance="Transparent" />
                         <ui:Button Content="Снять все" Command="{Binding SelectNoneCommand}" Appearance="Transparent" />
                     </StackPanel>
                     <TextBlock Text="{Binding Status}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" />
@@ -115,21 +128,15 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <StackPanel Margin="16,13,16,10">
                         <TextBlock Style="{StaticResource SectionTitle}" Text="{Binding SelectedCategory.Title}" TextWrapping="Wrap" />
-                        <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding SelectedCategory.Summary}" Margin="0,4,0,0" />
-                        <ui:Button Content="Открыть корзину" Command="{Binding OpenRecycleBinCommand}" Margin="0,8,0,0"
-                                   HorizontalAlignment="Left" Visibility="{Binding IsRecycleBinCategory, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding SelectedCategory.Description}" Margin="0,4,0,0" />
                     </StackPanel>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding VisibleItems}" AutoGenerateColumns="False" CanUserAddRows="False"
-                              CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinRowHeight="36"
-                              HorizontalGridLinesBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                              EnableRowVirtualization="True" EnableColumnVirtualization="True" SelectionMode="Single"
-                              BorderThickness="0" Background="Transparent" RowBackground="Transparent" AlternatingRowBackground="Transparent">
+                    <DataGrid Grid.Row="1" Style="{StaticResource CleanupList}" ItemsSource="{Binding VisibleItems}" EnableColumnVirtualization="True"
+                              Visibility="{Binding ShowsItemSelection, Converter={StaticResource BoolToVisibility}}">
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Выбор" Width="66">
+                            <DataGridTemplateColumn Header="Выбор" Width="66" CanUserSort="False">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
@@ -138,7 +145,7 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Название" Binding="{Binding Name, Mode=OneWay}" SortMemberPath="Name" Width="*" IsReadOnly="True">
+                            <DataGridTextColumn Header="Название" Binding="{Binding Name, Mode=OneWay}" Width="*" IsReadOnly="True" CanUserSort="False">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -158,27 +165,49 @@
                             </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
-                    <Border Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                            Padding="16,10">
-                        <StackPanel>
-                            <TextBlock Text="{Binding SelectedCategory.Description}" Style="{StaticResource SecondaryText}" />
-                            <TextBlock Text="{Binding DetailsHint}" Style="{StaticResource CaptionText}" Margin="0,3,0,0" />
-                        </StackPanel>
-                    </Border>
+                    <DataGrid Grid.Row="1" Style="{StaticResource CleanupList}" ItemsSource="{Binding RecycleBinItems}" IsReadOnly="True"
+                              Visibility="{Binding IsRecycleBinCategory, Converter={StaticResource BoolToVisibility}}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Название" Binding="{Binding Name, Mode=OneWay}" Width="*" CanUserSort="False">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                        <Setter Property="ToolTip" Value="{Binding Name}" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Размер" Binding="{Binding Size, Mode=OneWay}" SortMemberPath="Item.Bytes" Width="85">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Right" />
+                                        <Setter Property="Margin" Value="0,0,12,0" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </Grid>
             </Border>
         </Grid>
 
-        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,14,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <ui:Button Content="Пропуски" Command="{Binding ShowIssuesCommand}" Margin="0,0,8,0"
-                               Visibility="{Binding HasIssues, Converter={StaticResource BoolToVisibility}}" />
-                    <ui:Button Content="Очистить выбранное" Command="{Binding CleanCommand}" IsEnabled="{Binding CanClean}"
-                               Icon="{ui:SymbolIcon Delete24}" Appearance="Primary" />
-                </StackPanel>
-                <TextBlock Text="{Binding SelectionSummary}" Style="{StaticResource ItemTitle}" VerticalAlignment="Center" Margin="0,0,12,0" />
-            </DockPanel>
-        </Border>
+        <ui:Button Grid.Row="2" HorizontalAlignment="Right" Margin="0,14,0,0" Appearance="Primary">
+            <ui:Button.Style>
+                <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Setter Property="Content" Value="Анализировать" />
+                    <Setter Property="Command" Value="{Binding AnalyzeCommand}" />
+                    <Setter Property="Icon" Value="{ui:SymbolIcon ArrowClockwise24}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasAnalysis}" Value="True">
+                            <Setter Property="Content" Value="{Binding CleanButtonText}" />
+                            <Setter Property="Command" Value="{Binding CleanCommand}" />
+                            <Setter Property="Icon" Value="{ui:SymbolIcon Delete24}" />
+                            <Setter Property="IsEnabled" Value="{Binding CanClean}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ui:Button.Style>
+        </ui:Button>
     </Grid>
 </UserControl>

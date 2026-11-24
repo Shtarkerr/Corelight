@@ -8,7 +8,7 @@ public sealed record CategoryInfo(TweakCategory Category, string Title, string S
 {
     public static readonly IReadOnlyList<CategoryInfo> All =
     [
-        new(TweakCategory.Apps, "Приложения", "AppX удаляются для всех пользователей, возвращаются текущему, если доступны в Store. OneDrive — из штатного установщика.", SymbolRegular.Apps24),
+        new(TweakCategory.Apps, "Приложения", "Приложения из Microsoft Store удаляются у всех пользователей ПК.", SymbolRegular.Apps24),
         new(TweakCategory.Privacy, "Телеметрия и приватность", "Сбор данных, реклама и фоновые задачи диагностики.", SymbolRegular.ShieldLock24),
         new(TweakCategory.Interface, "Интерфейс и фон", "Советы, рекомендации и фоновая активность.", SymbolRegular.Board24),
         new(TweakCategory.Gaming, "Игровые", "Штатные игровые настройки Windows. Без разгона и без вмешательства в игры.", SymbolRegular.Games24),

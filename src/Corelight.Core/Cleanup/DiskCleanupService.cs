@@ -88,8 +88,18 @@ public sealed class DiskCleanupService
         RecycleBinState? recycle = null;
         try { recycle = _shell.QueryRecycleBin(); }
         catch (Exception ex) when (ex is not OperationCanceledException) { AddIssue(issues, "Корзина", ex.Message); }
+        IReadOnlyList<RecycleBinItem> recycleBinItems = [];
+        if (recycle?.Items > 0)
+        {
+            try { recycleBinItems = _shell.ListRecycleBin(ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                AddIssue(issues, "Корзина", ex.Message);
+                _log.LogWarning(ex, "Не удалось прочитать содержимое корзины для предварительного просмотра");
+            }
+        }
         _log.LogInformation("Анализ очистки: {Items} элементов, {Bytes} байт, {Issues} замечаний", items.Count, items.Sum(item => item.Bytes), issues.Count);
-        return new(items.AsReadOnly(), issues.AsReadOnly(), recycle, now);
+        return new(items.AsReadOnly(), issues.AsReadOnly(), recycle, recycleBinItems, now);
     }
 
     private void AnalyzeEmptyDirectories(List<CleanupItem> items, List<CleanupIssue> issues, CancellationToken ct)

@@ -147,6 +147,11 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding StartsGroup}" Value="True">
+                <Setter Property="Margin" Value="12,0,4,0" />
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Вкладка-«таблетка» для разделов страницы «Расширенное». -->

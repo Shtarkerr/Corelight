@@ -33,6 +33,8 @@ public sealed class DialogService
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        // После выбора ширины WPF UI подгоняем высоту по окончательному переносу строк.
+        box.Loaded += (_, _) => box.SizeToContent = SizeToContent.Height;
         if (primary is not null)
             box.PrimaryButtonText = primary;
         else

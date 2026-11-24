@@ -1,6 +1,6 @@
 namespace Corelight.Core.Cleanup;
 
-public sealed record CleanupCategory(string Id, string Title, string Description, bool DefaultSelected);
+public sealed record CleanupCategory(string Id, string Title, string Description);
 
 internal enum CleanupFilter { All, Thumbnails, Dumps, BrokenShortcuts }
 internal sealed record CleanupRule(string CategoryId, string Root, TimeSpan MinimumAge, CleanupFilter Filter = CleanupFilter.All);
@@ -22,14 +22,17 @@ public sealed record CleanupItem(string CategoryId, string Path, long Bytes)
 
 public sealed record CleanupIssue(string Path, string Reason);
 public sealed record RecycleBinState(long Bytes, long Items);
+public sealed record RecycleBinItem(string Name, long? Bytes, bool IsDirectory);
 
 public sealed class CleanupScan
 {
-    internal CleanupScan(IReadOnlyList<CleanupItem> items, IReadOnlyList<CleanupIssue> issues, RecycleBinState? recycleBin, DateTime time)
-    { Items = items; Issues = issues; RecycleBin = recycleBin; CreatedUtc = time; }
+    internal CleanupScan(IReadOnlyList<CleanupItem> items, IReadOnlyList<CleanupIssue> issues, RecycleBinState? recycleBin,
+        IReadOnlyList<RecycleBinItem> recycleBinItems, DateTime time)
+    { Items = items; Issues = issues; RecycleBin = recycleBin; RecycleBinItems = recycleBinItems; CreatedUtc = time; }
     public IReadOnlyList<CleanupItem> Items { get; }
     public IReadOnlyList<CleanupIssue> Issues { get; }
     public RecycleBinState? RecycleBin { get; }
+    public IReadOnlyList<RecycleBinItem> RecycleBinItems { get; }
     public DateTime CreatedUtc { get; }
 }
 

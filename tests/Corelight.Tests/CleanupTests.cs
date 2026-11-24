@@ -63,7 +63,7 @@ public sealed class CleanupTests : IDisposable
     }
 
     [Fact]
-    public async Task Downloads_are_opt_in_and_only_reviewed_files_are_deleted()
+    public async Task Downloads_are_deleted_only_when_included_and_only_from_the_reviewed_list()
     {
         _downloadsPath = Downloads;
         var nested = Path.Combine(Downloads, "nested");
@@ -73,10 +73,9 @@ public sealed class CleanupTests : IDisposable
         var svc = Service();
 
         var scan = await svc.AnalyzeAsync();
-        Assert.False(svc.Categories.Single(c => c.Id == "downloads").DefaultSelected);
         Assert.Equal(2, scan.Items.Count);
         Assert.All(scan.Items, file => Assert.Equal("downloads", file.CategoryId));
-        await svc.CleanAsync(scan, svc.Categories.Where(c => c.DefaultSelected).Select(c => c.Id).ToArray());
+        await svc.CleanAsync(scan, ["user-temp"]);
         Assert.True(File.Exists(download));
 
         scan = await svc.AnalyzeAsync();
@@ -167,9 +166,9 @@ public sealed class CleanupTests : IDisposable
     }
 
     [Fact]
-    public async Task Recycle_bin_requires_explicit_selection()
+    public async Task Recycle_bin_is_emptied_only_when_included_in_cleanup()
     {
-        var svc = Service(); Assert.False(svc.Categories.Single(c => c.Id == "recycle-bin").DefaultSelected);
+        var svc = Service();
         await svc.CleanAsync(await svc.AnalyzeAsync(), []); Assert.Equal(0, _shell.EmptyCalls);
         var result = await svc.CleanAsync(await svc.AnalyzeAsync(), ["recycle-bin"]);
         Assert.Equal(1, _shell.EmptyCalls); Assert.True(result.RecycleBinEmptied); Assert.Equal(1024, result.RecycleBinBytes);
@@ -181,6 +180,21 @@ public sealed class CleanupTests : IDisposable
         _shell.FailQuery = true; var svc = Service(); var scan = await svc.AnalyzeAsync();
         Assert.Null(scan.RecycleBin); Assert.NotEmpty(scan.Issues);
         await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CleanAsync(scan, ["recycle-bin"]));
+        Assert.Equal(0, _shell.EmptyCalls);
+    }
+
+    [Fact]
+    public async Task Recycle_bin_preview_failure_preserves_the_windows_totals_and_other_results()
+    {
+        var file = FileAt(Temp, "old.tmp");
+        _shell.FailList = true;
+
+        var scan = await Service().AnalyzeAsync();
+
+        Assert.Equal(new RecycleBinState(1024, 1), scan.RecycleBin);
+        Assert.Empty(scan.RecycleBinItems);
+        Assert.Equal(file, Assert.Single(scan.Items).Path);
+        Assert.Equal("Корзина", Assert.Single(scan.Issues).Path);
         Assert.Equal(0, _shell.EmptyCalls);
     }
 
@@ -231,7 +245,6 @@ public sealed class CleanupTests : IDisposable
         Assert.All(new[] { empty, recent, documentFolder, appFolder, hidden, system, redirected, protectedParent, nested, startMenu },
             path => Assert.True(Directory.Exists(path)));
         Assert.True(File.Exists(config));
-        Assert.False(svc.Categories.Single(category => category.Id == "shortcuts").DefaultSelected);
         var driveRoot = Path.GetPathRoot(_root)!;
         Assert.Empty(CleanupCatalog.DirectoryScopes(_root, startMenu, driveRoot, []));
         Assert.Empty(CleanupCatalog.DirectoryScopes(_root, Desktop, Documents, [driveRoot]));
@@ -262,26 +275,141 @@ public sealed class CleanupTests : IDisposable
     }
 
     [Fact]
-    public async Task Cleanup_page_requires_selection_of_both_folder_and_category()
+    public async Task Cleanup_page_keeps_empty_folders_unselected_during_bulk_selection()
     {
         var path = DesktopFolder("Empty");
+        _shell.EmptyRecycleBin();
         var viewModel = new CleanupViewModel(DirectoryService(), new AppState(null!), null!, NullLogger<CleanupViewModel>.Instance);
         var category = viewModel.Categories.Single(item => item.Category.Id == "shortcuts");
-        viewModel.SelectedCategory = category;
-
         await viewModel.AnalyzeCommand.ExecuteAsync(null);
 
+        category.IsSelected = true;
+
+        Assert.Same(category, viewModel.SelectedCategory);
         Assert.Equal("Неработающие ярлыки и пустые папки", category.Title);
         var folder = Assert.Single(viewModel.VisibleItems);
         Assert.Equal(path, folder.Path);
         Assert.False(folder.IsSelected);
-        category.IsSelected = true;
+        Assert.True(category.IsSelected);
         Assert.False(viewModel.CanClean);
+
+        _shell.BrokenTarget = Path.Combine(_root, "target.exe");
+        FileAt(Desktop, "lost.lnk");
+        await viewModel.AnalyzeCommand.ExecuteAsync(null);
+        Assert.Equal(2, viewModel.VisibleItems.Count);
+        Assert.True(viewModel.VisibleItems.Single(item => !item.Item.IsDirectory).IsSelected);
+        viewModel.SelectNoneCommand.Execute(null);
+        viewModel.SelectAllCommand.Execute(null);
+
+        folder = viewModel.VisibleItems.Single(item => item.Item.IsDirectory);
+        Assert.False(folder.IsSelected);
+        viewModel.VisibleItems.Single(item => !item.Item.IsDirectory).IsSelected = false;
+        Assert.False(category.IsSelected);
         folder.IsSelected = true;
+        viewModel.SelectAllCommand.Execute(null);
+        Assert.True(folder.IsSelected);
+        viewModel.VisibleItems.Single(item => !item.Item.IsDirectory).IsSelected = false;
+        Assert.True(category.IsSelected);
         Assert.True(viewModel.CanClean);
         Assert.Contains("папок 1", viewModel.SelectionSummary);
+        Assert.Equal("Очистить 0 МБ", viewModel.CleanButtonText);
         category.IsSelected = false;
+        Assert.False(category.IsSelected);
+        Assert.False(folder.IsSelected);
         Assert.False(viewModel.CanClean);
+    }
+
+    [Fact]
+    public async Task Cleanup_button_rounds_the_selected_total_before_choosing_megabytes_or_gigabytes()
+    {
+        const long megabyte = 1024 * 1024;
+        var temp = FileAt(Temp, "old.tmp");
+        using (var file = File.OpenWrite(temp)) file.SetLength(megabyte);
+        File.SetLastWriteTimeUtc(temp, DateTime.UtcNow.AddDays(-14));
+        FileAt(Cache, "shader.bin");
+        _shell.BinBytes = 1023 * megabyte;
+        var viewModel = new CleanupViewModel(Service(), new AppState(null!), null!, NullLogger<CleanupViewModel>.Instance);
+        var shaders = viewModel.Categories.Single(item => item.Category.Id == "shaders");
+        var recycle = viewModel.Categories.Single(item => item.Category.Id == "recycle-bin");
+
+        await viewModel.AnalyzeCommand.ExecuteAsync(null);
+        Assert.StartsWith("Найдено:", viewModel.Status);
+        Assert.DoesNotContain("Проверьте список", viewModel.Status);
+        Assert.Equal($"Очистить {1m:0.00} ГБ", viewModel.CleanButtonText);
+        viewModel.SelectNoneCommand.Execute(null);
+        viewModel.Categories.Single(item => item.Category.Id == "user-temp").IsSelected = true;
+        Assert.Equal("Очистить 1 МБ", viewModel.CleanButtonText);
+
+        viewModel.SelectedCategory = shaders;
+        var shader = Assert.Single(viewModel.VisibleItems);
+        shader.IsSelected = true;
+        Assert.Equal("Очистить 2 МБ", viewModel.CleanButtonText);
+
+        recycle.IsSelected = true;
+        Assert.Equal($"Очистить {1m:0.00} ГБ", viewModel.CleanButtonText);
+        shader.IsSelected = false;
+        Assert.Equal($"Очистить {1m:0.00} ГБ", viewModel.CleanButtonText);
+
+        viewModel.SelectNoneCommand.Execute(null);
+        Assert.Equal("Очистить 0 МБ", viewModel.CleanButtonText);
+        Assert.False(viewModel.CanClean);
+    }
+
+    [Fact]
+    public async Task Cleanup_page_keeps_file_selection_category_and_details_in_sync()
+    {
+        FileAt(Temp, "old.tmp");
+        FileAt(Cache, "first.bin");
+        var larger = FileAt(Cache, "second.bin");
+        File.WriteAllText(larger, new string('x', 80));
+        File.SetLastWriteTimeUtc(larger, DateTime.UtcNow.AddDays(-14));
+        var viewModel = new CleanupViewModel(Service(), new AppState(null!), null!, NullLogger<CleanupViewModel>.Instance);
+        var temp = viewModel.Categories.Single(item => item.Category.Id == "user-temp");
+        var cache = viewModel.Categories.Single(item => item.Category.Id == "shaders");
+        var recycle = viewModel.Categories.Single(item => item.Category.Id == "recycle-bin");
+
+        await viewModel.AnalyzeCommand.ExecuteAsync(null);
+        Assert.All(viewModel.Categories, category => Assert.True(category.IsSelected));
+
+        viewModel.SelectedCategory = cache;
+        Assert.All(viewModel.VisibleItems, item => Assert.True(item.IsSelected));
+        Assert.Equal(larger, viewModel.VisibleItems[0].Path);
+        cache.IsSelected = false;
+        var file = viewModel.VisibleItems.First();
+        file.IsSelected = true;
+        Assert.True(cache.IsSelected);
+        Assert.Contains("файлов 2", viewModel.SelectionSummary);
+        file.IsSelected = false;
+        Assert.False(cache.IsSelected);
+
+        file.IsSelected = true;
+        await viewModel.AnalyzeCommand.ExecuteAsync(null);
+        Assert.All(viewModel.Categories, category => Assert.True(category.IsSelected));
+        Assert.All(viewModel.VisibleItems, item => Assert.True(item.IsSelected));
+
+        viewModel.SelectedCategory = temp;
+        cache.IsSelected = true;
+        Assert.Same(cache, viewModel.SelectedCategory);
+        Assert.Equal(2, viewModel.VisibleItems.Count);
+        Assert.All(viewModel.VisibleItems, item => Assert.True(item.IsSelected));
+
+        recycle.IsSelected = true;
+        Assert.Same(recycle, viewModel.SelectedCategory);
+        Assert.True(viewModel.IsRecycleBinCategory);
+        Assert.False(viewModel.ShowsItemSelection);
+        Assert.Empty(viewModel.VisibleItems);
+        Assert.Equal("fixture.txt", Assert.Single(viewModel.RecycleBinItems).Name);
+        Assert.True(recycle.IsSelected);
+        Assert.Contains("+ корзина", viewModel.SelectionSummary);
+
+        viewModel.SelectNoneCommand.Execute(null);
+        Assert.Same(recycle, viewModel.SelectedCategory);
+        Assert.All(viewModel.Categories, category => Assert.False(category.IsSelected));
+        Assert.False(viewModel.CanClean);
+        viewModel.SelectAllCommand.Execute(null);
+        Assert.Same(recycle, viewModel.SelectedCategory);
+        Assert.All(viewModel.Categories, category => Assert.True(category.IsSelected));
+        Assert.True(viewModel.CanClean);
     }
 
     [Fact]
@@ -432,9 +560,12 @@ public sealed class CleanupTests : IDisposable
         public bool Missing { get; set; } = true;
         public int EmptyCalls { get; private set; }
         public bool FailQuery { get; set; }
+        public bool FailList { get; set; }
+        public long BinBytes { get; set; } = 1024;
         public string? BrokenShortcutTarget(string path) => BrokenTarget;
         public bool IsMissingTarget(string path) => Missing;
-        public RecycleBinState QueryRecycleBin() => FailQuery ? throw new IOException("Bin unavailable") : EmptyCalls == 0 ? new(1024, 1) : new(0, 0);
+        public RecycleBinState QueryRecycleBin() => FailQuery ? throw new IOException("Bin unavailable") : EmptyCalls == 0 ? new(BinBytes, 1) : new(0, 0);
+        public IReadOnlyList<RecycleBinItem> ListRecycleBin(CancellationToken ct) => FailList ? throw new IOException("Listing unavailable") : [new("fixture.txt", BinBytes, false)];
         public void EmptyRecycleBin() => EmptyCalls++;
     }
     private sealed class CallbackProgress(Action action) : IProgress<string> { public void Report(string value) => action(); }

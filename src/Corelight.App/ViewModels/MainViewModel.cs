@@ -9,7 +9,7 @@ using Corelight.Core.Platform;
 
 namespace Corelight.App.ViewModels;
 
-public sealed record NavItem(string Title, SymbolRegular Icon, object Page, string? ShortTitle = null)
+public sealed record NavItem(string Title, SymbolRegular Icon, object Page, string? ShortTitle = null, bool StartsGroup = false)
 {
     public string DisplayTitle => ShortTitle ?? Title;
 }
@@ -41,8 +41,8 @@ public sealed partial class MainViewModel : ObservableObject
             new NavItem("Главная", SymbolRegular.Home24, home),
             new NavItem("Результаты сканирования", SymbolRegular.TaskListLtr24, scan, "Результаты"),
             new NavItem("Расширенное", SymbolRegular.Wrench24, advanced),
-            new NavItem("История и откат", SymbolRegular.History24, history),
             new NavItem("Очистка диска", SymbolRegular.Delete24, cleanup),
+            new NavItem("История и откат", SymbolRegular.History24, history, StartsGroup: true),
         ];
         navigation.NavigationRequested += type => SelectedItem = Items.First(i => i.Page.GetType() == type);
     }

@@ -29,7 +29,7 @@ internal static class DebugTour
         Save(window, dir, "2-results");
 
         var advanced = services.GetRequiredService<AdvancedViewModel>();
-        main.SelectedItem = main.Items[2];
+        main.SelectedItem = main.Items.First(i => i.Page is AdvancedViewModel);
         await SettleAsync(state);
         for (var i = 0; i < advanced.Sections.Count; i++)
         {
@@ -38,7 +38,7 @@ internal static class DebugTour
             Save(window, dir, $"3-advanced-{i}");
         }
 
-        main.SelectedItem = main.Items[3];
+        main.SelectedItem = main.Items.First(i => i.Page is HistoryViewModel);
         await SettleAsync(state);
         Save(window, dir, "4-history");
 

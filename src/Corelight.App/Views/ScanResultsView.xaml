@@ -37,11 +37,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0">
-            <TextBlock Style="{StaticResource PageTitle}" Text="Результаты сканирования" />
-            <TextBlock Margin="0,6,0,12" Style="{StaticResource SecondaryText}" FontSize="14"
-                       Text="Проверьте галочки перед применением. Пункты «Осторожно» могут отключить функцию или удалить приложение." />
-        </StackPanel>
+        <TextBlock Grid.Row="0" Margin="0,0,0,12" Style="{StaticResource PageTitle}" Text="Результаты сканирования" />
 
         <!-- Сканирования ещё не было -->
         <Border Grid.Row="1" Style="{StaticResource Card}" VerticalAlignment="Top" Padding="20"
@@ -56,8 +52,19 @@
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                       Visibility="{Binding HasScan, Converter={StaticResource BoolToVisibility}}">
             <StackPanel>
-                <Expander Header="{Binding ManualItemsHeader}" IsExpanded="{Binding IsManualExpanded, Mode=TwoWay}"
-                          Margin="0,0,0,16" Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+                <Expander IsExpanded="{Binding IsManualExpanded, Mode=TwoWay}" Margin="0,0,0,16" Padding="16,12"
+                          AutomationProperties.Name="{Binding ManualItemsHeader}"
+                          Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                          BorderBrush="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                          Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Wrench24" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                            <TextBlock Style="{StaticResource ItemTitle}" FontSize="16" VerticalAlignment="Center"
+                                       Text="{Binding ManualItemsHeader}" />
+                        </StackPanel>
+                    </Expander.Header>
                     <StackPanel Margin="16,4,0,8">
                         <TextBlock Style="{StaticResource SecondaryText}" Text="Дополнительных настроек не найдено."
                                    Visibility="{Binding HasNoManualItems, Converter={StaticResource BoolToVisibility}}" />

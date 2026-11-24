@@ -8,6 +8,7 @@ internal interface ICleanupShell
     string? BrokenShortcutTarget(string path);
     bool IsMissingTarget(string target);
     RecycleBinState QueryRecycleBin();
+    IReadOnlyList<RecycleBinItem> ListRecycleBin(CancellationToken ct);
     void EmptyRecycleBin();
 }
 
@@ -71,6 +72,58 @@ internal sealed class WindowsCleanupShell : ICleanupShell
         var info = new RecycleInfo { Size = Marshal.SizeOf<RecycleInfo>() };
         Marshal.ThrowExceptionForHR(SHQueryRecycleBin(null, ref info));
         return new(Math.Max(0, info.Bytes), Math.Max(0, info.Items));
+    }
+
+    public IReadOnlyList<RecycleBinItem> ListRecycleBin(CancellationToken ct)
+    {
+        const int recycleBinFolder = 10; // ShellSpecialFolderConstants.ssfBITBUCKET
+        object? shell = null, folder = null, items = null;
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            var shellType = Type.GetTypeFromProgID("Shell.Application", throwOnError: true)!;
+            shell = Activator.CreateInstance(shellType)!;
+            folder = ((dynamic)shell).NameSpace(recycleBinFolder);
+            if (folder is null) throw new IOException("Windows не открыла папку корзины.");
+            items = ((dynamic)folder).Items();
+            if (items is null) throw new IOException("Windows не вернула содержимое корзины.");
+            int count = ((dynamic)items).Count;
+            var result = new List<RecycleBinItem>(count);
+            for (var i = 0; i < count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                object? item = ((dynamic)items).Item(i);
+                if (item is null) continue;
+                try
+                {
+                    string name = ((dynamic)item).Name;
+                    bool isDirectory = ((dynamic)item).IsFolder;
+                    object? size = isDirectory ? null : ((dynamic)item).ExtendedProperty("System.Size");
+                    var bytes = size switch
+                    {
+                        ulong value when value <= long.MaxValue => (long)value,
+                        long value when value >= 0 => value,
+                        uint value => value,
+                        int value when value >= 0 => value,
+                        _ => (long?)null,
+                    };
+                    if (!string.IsNullOrWhiteSpace(name)) result.Add(new(name, bytes, isDirectory));
+                }
+                finally { ReleaseComObject(item); }
+            }
+            return result.AsReadOnly();
+        }
+        finally
+        {
+            ReleaseComObject(items);
+            ReleaseComObject(folder);
+            ReleaseComObject(shell);
+        }
+    }
+
+    private static void ReleaseComObject(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
     }
 
     public void EmptyRecycleBin() => Marshal.ThrowExceptionForHR(SHEmptyRecycleBin(IntPtr.Zero, null, 1 | 2 | 4));
