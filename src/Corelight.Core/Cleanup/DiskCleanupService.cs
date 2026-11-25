@@ -1,24 +1,40 @@
 using Microsoft.Extensions.Logging;
+using Corelight.Core.Platform;
 
 namespace Corelight.Core.Cleanup;
 
 /// <summary>Очистка удаляет только выбранные элементы последнего анализа.</summary>
 public sealed class DiskCleanupService
 {
-    private readonly IReadOnlyList<CleanupRule> _rules;
+    private readonly Func<IReadOnlyList<CleanupRule>> _getRules;
     private readonly ICleanupShell _shell;
     private readonly ILogger<DiskCleanupService> _log;
     private readonly Func<string?>? _getDownloadsPath;
     private readonly Func<IReadOnlyList<CleanupDirectoryScope>>? _getDirectoryScopes;
+    private readonly Func<IEnumerable<string>> _getSyncRoots;
     private readonly SemaphoreSlim _gate = new(1);
     private CleanupScan? _lastScan;
     public IReadOnlyList<CleanupCategory> Categories => CleanupCatalog.Categories;
 
     public DiskCleanupService(ILogger<DiskCleanupService> log)
-        : this(CleanupCatalog.Rules(), new WindowsCleanupShell(), log, WindowsCleanupShell.GetDownloadsPath, CleanupCatalog.GetDirectoryScopes) { }
+        : this(CleanupCatalog.Rules, new WindowsCleanupShell(), log, WindowsCleanupShell.GetDownloadsPath,
+            CleanupCatalog.GetDirectoryScopes, () => WindowsOneDriveControl.GetSyncRoots(new WindowsRegistryAccess(),
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))) { }
     internal DiskCleanupService(IReadOnlyList<CleanupRule> rules, ICleanupShell shell, ILogger<DiskCleanupService> log,
-        Func<string?>? getDownloadsPath = null, Func<IReadOnlyList<CleanupDirectoryScope>>? getDirectoryScopes = null)
-    { _rules = rules; _shell = shell; _log = log; _getDownloadsPath = getDownloadsPath; _getDirectoryScopes = getDirectoryScopes; }
+        Func<string?>? getDownloadsPath = null, Func<IReadOnlyList<CleanupDirectoryScope>>? getDirectoryScopes = null,
+        Func<IEnumerable<string>>? getSyncRoots = null)
+        : this(() => rules, shell, log, getDownloadsPath, getDirectoryScopes, getSyncRoots ?? (() => [])) { }
+
+    private DiskCleanupService(Func<IReadOnlyList<CleanupRule>> getRules, ICleanupShell shell, ILogger<DiskCleanupService> log,
+        Func<string?>? getDownloadsPath, Func<IReadOnlyList<CleanupDirectoryScope>>? getDirectoryScopes, Func<IEnumerable<string>> getSyncRoots)
+    {
+        _getRules = getRules;
+        _shell = shell;
+        _log = log;
+        _getDownloadsPath = getDownloadsPath;
+        _getDirectoryScopes = getDirectoryScopes;
+        _getSyncRoots = getSyncRoots;
+    }
 
     public async Task<CleanupScan> AnalyzeAsync(IProgress<string>? progress = null, CancellationToken ct = default)
     {
@@ -36,10 +52,11 @@ public sealed class DiskCleanupService
         var items = new List<CleanupItem>(); var issues = new List<CleanupIssue>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var now = DateTime.UtcNow;
-        IEnumerable<CleanupRule> rules = _rules;
+        var currentRules = _getRules();
+        IEnumerable<CleanupRule> rules = currentRules;
         try
         {
-            if (GetDownloadsRule() is { } downloads) rules = rules.Append(downloads);
+            if (GetDownloadsRule(currentRules) is { } downloads) rules = rules.Append(downloads);
         }
         catch (Exception ex) when (IsFileError(ex) || ex is System.Runtime.InteropServices.COMException)
         {
@@ -149,23 +166,27 @@ public sealed class DiskCleanupService
             var selected = selectedCategories.ToHashSet(StringComparer.Ordinal);
             if (selected.Except(Categories.Select(c => c.Id)).Any()) throw new ArgumentException("Неизвестная категория очистки.");
             if (selected.Contains("recycle-bin") && scan.RecycleBin is null) throw new InvalidOperationException("Корзина не проверена. Снимите её выбор или повторите анализ.");
-            if (selected.Contains(CleanupCatalog.DownloadsId) && scan.Items.FirstOrDefault(f =>
-                    f.CategoryId == CleanupCatalog.DownloadsId && excludedPaths?.Contains(f.Path) != true) is { } download &&
-                !string.Equals(GetDownloadsRule()?.Root, download.Rule.Root, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Расположение папки «Загрузки» изменилось. Повторите анализ.");
             _lastScan = null; // Один подтверждённый анализ разрешает только одну попытку очистки.
             return await Task.Run(() => Clean(scan, selected, excludedPaths, selectedDirectories, progress, ct), CancellationToken.None);
         }
         finally { _gate.Release(); }
     }
 
-    private CleanupRule? GetDownloadsRule() => CleanupCatalog.DownloadsRule(_getDownloadsPath?.Invoke(), _rules);
+    private CleanupRule? GetDownloadsRule(IReadOnlyList<CleanupRule> rules) =>
+        CleanupCatalog.DownloadsRule(_getDownloadsPath?.Invoke(), rules, _getSyncRoots());
 
     private CleanupResult Clean(CleanupScan scan, HashSet<string> selected, IReadOnlySet<string>? excluded,
         IReadOnlySet<string>? selectedDirectories, IProgress<string>? progress, CancellationToken ct)
     {
         int deleted = 0, skipped = 0, deletedDirectories = 0, skippedDirectories = 0; long bytes = 0, released = 0;
         var issues = new List<CleanupIssue>(); var emptied = false; long recycleBytes = 0;
+        var currentRules = _getRules();
+        if (selected.Contains(CleanupCatalog.DownloadsId) && scan.Items.FirstOrDefault(f =>
+                f.CategoryId == CleanupCatalog.DownloadsId && excluded?.Contains(f.Path) != true) is { } download &&
+            !string.Equals(GetDownloadsRule(currentRules)?.Root, download.Rule.Root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Расположение папки «Загрузки» изменилось. Повторите анализ.");
+        var shortcutRoots = currentRules.Where(rule => rule.Filter == CleanupFilter.BrokenShortcuts)
+            .Select(rule => rule.Root).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var scopes = selected.Contains(CleanupCatalog.ShortcutsId) && selectedDirectories?.Count > 0 ? GetDirectoryScopes(issues) : [];
         foreach (var item in scan.Items.Where(item => selected.Contains(item.CategoryId) && excluded?.Contains(item.Path) != true
             && (!item.IsDirectory || selectedDirectories?.Contains(item.Path) == true)))
@@ -177,6 +198,8 @@ public sealed class DiskCleanupService
             {
                 if (item.IsDirectory && !scopes.Any(scope => scope.Includes(item.Path)))
                     throw new IOException("Расположение папки изменилось или теперь защищено. Повторите анализ.");
+                if (item.Rule.Filter == CleanupFilter.BrokenShortcuts && !shortcutRoots.Contains(item.Rule.Root))
+                    throw new IOException("Расположение папки ярлыков изменилось. Повторите анализ.");
                 released += CleanupFiles.Delete(item, () => item.ShortcutTarget is null || _shell.IsMissingTarget(item.ShortcutTarget));
                 if (item.IsDirectory) deletedDirectories++;
                 else { deleted++; bytes += item.Bytes; }

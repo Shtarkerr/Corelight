@@ -30,6 +30,7 @@ public sealed class ProcessRunner : IProcessRunner
         var psi = new ProcessStartInfo(fileName)
         {
             UseShellExecute = false,
+            WorkingDirectory = Path.GetDirectoryName(fileName)!,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

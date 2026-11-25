@@ -60,7 +60,9 @@ public sealed partial class CleanupViewModel : ObservableObject
     private readonly DialogService _dialogs;
     private readonly ILogger<CleanupViewModel> _log;
     private CleanupScan? _scan;
-    private readonly List<CleanupItemViewModel> _items = [];
+    private const string RecycleBinId = "recycle-bin";
+    private IReadOnlyDictionary<string, CategoryRows> _items = new Dictionary<string, CategoryRows>();
+    private IEnumerable<CleanupItemViewModel> AllRows => _items.Values.SelectMany(group => group.Rows);
     private CancellationTokenSource? _cancellation;
     private bool _updatingSelection;
 
@@ -90,14 +92,12 @@ public sealed partial class CleanupViewModel : ObservableObject
     public bool ShowsItemSelection => !IsRecycleBinCategory;
 
     private RecycleBinState? SelectedRecycleBin => _scan?.RecycleBin is { Items: > 0 } bin
-        && Categories.Any(category => category.Category.Id == "recycle-bin" && category.IsSelected) ? bin : null;
+        && Categories.Any(category => category.Category.Id == RecycleBinId && category.IsSelected) ? bin : null;
 
     partial void OnSelectedCategoryChanged(CleanupCategoryViewModel? value) => UpdateVisibleItems();
 
     private void RefreshAnalysis()
     {
-        RecycleBinItems = _scan?.RecycleBinItems.OrderByDescending(item => item.Bytes)
-            .Select(item => new RecycleBinItemViewModel(item)).ToArray() ?? [];
         UpdateVisibleItems();
         UpdateSelection();
         OnPropertyChanged(nameof(HasAnalysis));
@@ -106,36 +106,37 @@ public sealed partial class CleanupViewModel : ObservableObject
     private void UpdateVisibleItems()
     {
         var id = SelectedCategory?.Category.Id;
-        IsRecycleBinCategory = id == "recycle-bin";
-        VisibleItems = _items.Where(item => item.Item.CategoryId == id).ToArray();
+        IsRecycleBinCategory = id == RecycleBinId;
+        VisibleItems = id is not null && _items.TryGetValue(id, out var group) ? group.Rows : [];
     }
 
     private void UpdateSelection()
     {
-        var items = _items.Where(item => item.IsSelected).ToArray();
+        var files = _items.Values.Sum(group => group.SelectedFiles);
+        var directories = _items.Values.Sum(group => group.SelectedDirectories);
         var recycle = SelectedRecycleBin;
-        var bytes = items.Sum(item => item.Item.Bytes) + (recycle?.Bytes ?? 0);
-        SelectionSummary = $"Выбрано: {FormatCounts(items)} · {CleanupSize.Format(bytes)}" + (recycle?.Items > 0 ? " + корзина" : "");
+        var bytes = _items.Values.Sum(group => group.SelectedBytes) + (recycle?.Bytes ?? 0);
+        var counts = recycle is null ? FormatCounts(files, directories) : $"файлов {recycle.Items + files + directories}";
+        SelectionSummary = $"Выбрано: {counts} · {CleanupSize.Format(bytes)}";
         const int bytesPerMegabyte = 1024 * 1024;
         var megabytes = Math.Ceiling((decimal)bytes / bytesPerMegabyte);
         CleanButtonText = megabytes < 1024
             ? $"Очистить {megabytes:0} МБ"
             : $"Очистить {megabytes / 1024:0.00} ГБ";
-        CanClean = _scan is not null && (items.Length > 0 || recycle?.Items > 0);
+        CanClean = _scan is not null && (files + directories > 0 || recycle?.Items > 0);
     }
 
     private void SetCategorySelections(IReadOnlyList<CleanupCategoryViewModel> categories, bool selected)
     {
         foreach (var category in categories)
             category.UpdateCheckBox(selected);
-        var categoryIds = categories.Select(category => category.Category.Id).ToHashSet();
-
         _updatingSelection = true;
         try
         {
-            foreach (var item in _items)
-                if (categoryIds.Contains(item.Item.CategoryId))
-                    item.IsSelected = selected && (!item.Item.IsDirectory || item.IsSelected);
+            foreach (var category in categories)
+                if (_items.TryGetValue(category.Category.Id, out var group))
+                    foreach (var row in group.Rows)
+                        row.IsSelected = selected && (!row.Item.IsDirectory || row.IsSelected);
         }
         finally { _updatingSelection = false; }
 
@@ -151,7 +152,9 @@ public sealed partial class CleanupViewModel : ObservableObject
     private void ClearAnalysis(string summary)
     {
         _scan = null;
-        _items.Clear();
+        foreach (var group in _items.Values) group.SelectionChanged = null;
+        _items = new Dictionary<string, CategoryRows>();
+        RecycleBinItems = [];
         foreach (var category in Categories)
         {
             category.UpdateCheckBox(false);
@@ -159,11 +162,92 @@ public sealed partial class CleanupViewModel : ObservableObject
         }
     }
 
-    private static string FormatCounts(IReadOnlyList<CleanupItemViewModel> items)
+    private static string FormatCounts(int files, int directories) =>
+        directories == 0 ? $"файлов {files}" : $"файлов {files}, папок {directories}";
+
+    private sealed class CategoryRows
     {
-        var directories = items.Count(item => item.Item.IsDirectory);
-        var files = items.Count - directories;
-        return directories == 0 ? $"файлов {files}" : $"файлов {files}, папок {directories}";
+        public CategoryRows(IEnumerable<CleanupItem> items, CancellationToken ct)
+        {
+            var rows = new List<CleanupItemViewModel>();
+            foreach (var entry in items.OrderByDescending(item => item.Bytes))
+            {
+                ct.ThrowIfCancellationRequested();
+                var row = new CleanupItemViewModel(entry, !entry.IsDirectory);
+                row.PropertyChanged += OnRowChanged;
+                rows.Add(row);
+                if (entry.IsDirectory) Directories++;
+                else Files++;
+                Bytes += entry.Bytes;
+            }
+            Rows = rows;
+            SelectedFiles = Files;
+            SelectedBytes = Bytes;
+        }
+
+        public IReadOnlyList<CleanupItemViewModel> Rows { get; }
+        public int Files { get; }
+        public int Directories { get; }
+        public long Bytes { get; }
+        public int SelectedFiles { get; private set; }
+        public int SelectedDirectories { get; private set; }
+        public long SelectedBytes { get; private set; }
+        public Action? SelectionChanged { get; set; }
+
+        private void OnRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(CleanupItemViewModel.IsSelected) || sender is not CleanupItemViewModel row) return;
+            var delta = row.IsSelected ? 1 : -1;
+            if (row.Item.IsDirectory) SelectedDirectories += delta;
+            else SelectedFiles += delta;
+            SelectedBytes += delta * row.Item.Bytes;
+            SelectionChanged?.Invoke();
+        }
+    }
+
+    private sealed record PreparedAnalysis(IReadOnlyDictionary<string, CategoryRows> Groups, IReadOnlyList<RecycleBinItemViewModel> RecycleItems);
+
+    private static PreparedAnalysis PrepareAnalysis(CleanupScan scan, CancellationToken ct)
+    {
+        var groups = scan.Items.GroupBy(item => item.CategoryId)
+            .ToDictionary(group => group.Key, group => new CategoryRows(group, ct), StringComparer.Ordinal);
+        var recycle = scan.RecycleBinItems.OrderByDescending(item => item.Bytes)
+            .Select(item => new RecycleBinItemViewModel(item)).ToArray();
+        return new(groups, recycle);
+    }
+
+    private void ShowAnalysis(PreparedAnalysis analysis)
+    {
+        _items = analysis.Groups;
+        RecycleBinItems = analysis.RecycleItems;
+        var bin = _scan?.RecycleBin;
+        foreach (var category in Categories)
+        {
+            category.UpdateCheckBox(true);
+            if (category.Category.Id == RecycleBinId)
+            {
+                category.Summary = bin is null ? "Не удалось проверить" :
+                    $"Элементов: {bin.Items} · {CleanupSize.Format(bin.Bytes)}" +
+                    (bin.Items > 0 && RecycleBinItems.Count == 0 ? " · Список недоступен" : "");
+                continue;
+            }
+
+            if (_items.TryGetValue(category.Category.Id, out var group))
+            {
+                group.SelectionChanged = () =>
+                {
+                    if (_updatingSelection) return;
+                    category.UpdateCheckBox(group.SelectedFiles + group.SelectedDirectories > 0);
+                    UpdateSelection();
+                };
+            }
+            category.Summary = $"{FormatCounts(group?.Files ?? 0, group?.Directories ?? 0)} · {CleanupSize.Format(group?.Bytes ?? 0)}";
+        }
+        var counts = FormatCounts(_items.Values.Sum(group => group.Files), _items.Values.Sum(group => group.Directories));
+        Status = $"Найдено: {counts} · {CleanupSize.Format(_items.Values.Sum(group => group.Bytes))}";
+        if (bin is { Items: > 0 })
+            Status += $" · В корзине {bin.Items} · {CleanupSize.Format(bin.Bytes)}";
+        RefreshAnalysis();
     }
 
     [RelayCommand]
@@ -177,35 +261,11 @@ public sealed partial class CleanupViewModel : ObservableObject
             using (_state.BeginBusy("Анализ…", () => _cancellation?.Cancel()))
             {
                 var progress = new Progress<string>(text => _state.BusyText = "Анализ: " + text);
-                _scan = await _cleanup.AnalyzeAsync(progress, _cancellation.Token);
-                foreach (var entry in _scan.Items.OrderByDescending(entry => entry.Bytes))
-                {
-                    var item = new CleanupItemViewModel(entry, !entry.IsDirectory);
-                    item.PropertyChanged += (_, e) =>
-                    {
-                        if (_updatingSelection || e.PropertyName != nameof(item.IsSelected)) return;
-                        var group = Categories.First(category => category.Category.Id == entry.CategoryId);
-                        group.UpdateCheckBox(_items.Any(row => row.IsSelected && row.Item.CategoryId == entry.CategoryId));
-                        UpdateSelection();
-                    };
-                    _items.Add(item);
-                }
-                foreach (var category in Categories)
-                {
-                    category.UpdateCheckBox(true);
-                    if (category.Category.Id == "recycle-bin")
-                    {
-                        category.Summary = _scan.RecycleBin is { } bin
-                            ? $"Элементов: {bin.Items} · {CleanupSize.Format(bin.Bytes)}" +
-                              (bin.Items > 0 && _scan.RecycleBinItems.Count == 0 ? " · Список недоступен" : "")
-                            : "Не удалось проверить";
-                        continue;
-                    }
-                    var found = _items.Where(item => item.Item.CategoryId == category.Category.Id).ToArray();
-                    category.Summary = $"{FormatCounts(found)} · {CleanupSize.Format(found.Sum(item => item.Item.Bytes))}";
-                }
-                var bytes = _scan.Items.Sum(item => item.Bytes) + (_scan.RecycleBin?.Bytes ?? 0);
-                Status = $"Найдено: {FormatCounts(_items)} · {CleanupSize.Format(bytes)}";
+                var scan = await _cleanup.AnalyzeAsync(progress, _cancellation.Token);
+                var prepared = await Task.Run(() => PrepareAnalysis(scan, _cancellation.Token), _cancellation.Token);
+                _cancellation.Token.ThrowIfCancellationRequested();
+                _scan = scan;
+                ShowAnalysis(prepared);
             }
         }
         catch (OperationCanceledException) { Status = "Анализ отменён."; ClearAnalysis("Ожидает анализа"); }
@@ -215,22 +275,21 @@ public sealed partial class CleanupViewModel : ObservableObject
             ClearAnalysis("Ожидает анализа"); Status = "Не удалось завершить анализ.";
             await _dialogs.ShowInfoAsync("Ошибка анализа", ex.Message);
         }
-        finally { _cancellation.Dispose(); _cancellation = null; RefreshAnalysis(); }
+        finally
+        {
+            _cancellation.Dispose();
+            _cancellation = null;
+            if (_scan is null) RefreshAnalysis();
+        }
     }
 
     [RelayCommand]
     private async Task CleanAsync()
     {
         if (!CanClean || _scan is null) return;
-        var selected = _items.Where(item => item.IsSelected).Select(item => item.Item.CategoryId).ToHashSet();
-        if (SelectedRecycleBin is not null) selected.Add("recycle-bin");
-        var message = SelectionSummary + ".\n\nВыбранные элементы будут удалены безвозвратно. История Corelight и точка восстановления не вернут их.";
-        if (selected.Contains("downloads"))
-        {
-            var count = _items.Count(item => item.IsSelected && item.Item.CategoryId == "downloads");
-            if (count > 0) message += $"\n\nИз папки «Загрузки» будет удалено файлов: {count}.";
-        }
-        if (selected.Contains("recycle-bin")) message += "\n\nКорзина будет очищена целиком на всех дисках, включая элементы, появившиеся после анализа.";
+        var selected = _items.Where(group => group.Value.SelectedFiles + group.Value.SelectedDirectories > 0).Select(group => group.Key).ToHashSet();
+        if (SelectedRecycleBin is not null) selected.Add(RecycleBinId);
+        var message = SelectionSummary + ".\n\nВыбранные файлы будут удалены безвозвратно.";
         if (!await _dialogs.ConfirmAsync("Очистить выбранное?", message, "Удалить выбранное")) return;
         _cancellation = new();
         try
@@ -238,8 +297,8 @@ public sealed partial class CleanupViewModel : ObservableObject
             CleanupResult result;
             using (_state.BeginBusy("Очистка…", () => _cancellation?.Cancel()))
                 result = await _cleanup.CleanAsync(_scan, selected, new Progress<string>(text => _state.BusyText = text), _cancellation.Token,
-                    _items.Where(item => !item.IsSelected).Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase),
-                    _items.Where(item => item.IsSelected && item.Item.IsDirectory).Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase));
+                    AllRows.Where(item => !item.IsSelected).Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                    AllRows.Where(item => item.IsSelected && item.Item.IsDirectory).Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase));
             var removed = result.DeletedDirectories > 0 ? $"файлов {result.DeletedFiles}, папок {result.DeletedDirectories}" : $"файлов {result.DeletedFiles}";
             var summary = $"{(result.Cancelled ? "Остановлено" : "Готово")}: удалено {removed} · {CleanupSize.Format(result.DeletedBytes)}";
             if (result.RecycleBinEmptied) summary += $" · корзина очищена (≈{CleanupSize.Format(result.RecycleBinBytes)})";

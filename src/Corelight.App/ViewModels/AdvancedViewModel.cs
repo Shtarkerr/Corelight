@@ -32,6 +32,10 @@ public sealed partial class AdvancedViewModel(
     public partial IReadOnlyList<StartupItemViewModel> StartupItems { get; set; } = [];
 
     public bool HasNoStartupItems => StartupItems.Count == 0;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasStartupWarning))]
+    public partial string? StartupWarning { get; set; }
+    public bool HasStartupWarning => StartupWarning is not null;
+    [ObservableProperty] public partial string? TweakWarning { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowsPendingOptions), nameof(ShowsStartup))]
@@ -47,12 +51,17 @@ public sealed partial class AdvancedViewModel(
             using (state.BeginBusy("Проверка текущих настроек…"))
             {
                 await LoadTweakSectionsAsync();
-                var items = await Task.Run(startup.GetItems);
-                StartupItems = items.Select(item => new StartupItemViewModel(item, OnStartupToggle)).ToArray();
+                var startupScan = await Task.Run(startup.GetItems);
+                StartupItems = startupScan.Items.Select(item => new StartupItemViewModel(item, OnStartupToggle)).ToArray();
+                StartupWarning = startupScan.Problems.Count == 0 ? null : "Некоторые записи автозагрузки недоступны.";
+                foreach (var problem in startupScan.Problems)
+                    log.LogWarning("Неполный список автозагрузки: {Problem}", problem);
             }
         }
         catch (Exception ex)
         {
+            StartupItems = [];
+            StartupWarning = "Не удалось обновить автозагрузку.";
             log.LogError(ex, "Не удалось загрузить раздел «Расширенное»");
             await dialogs.ShowInfoAsync("Ошибка", ex.Message);
         }
@@ -69,10 +78,12 @@ public sealed partial class AdvancedViewModel(
         {
             Sections.Clear();
             SelectedSection = null;
+            TweakWarning = null;
             throw;
         }
         var pending = report.Statuses.Where(s => s.CanApply).OrderByDescending(s => s.Tweak.Impact)
             .ToLookup(s => s.Tweak.Category);
+        TweakWarning = report.UnknownItems.Count > 0 ? $"Не удалось проверить настроек: {report.UnknownItems.Count}." : null;
         var selectedCategory = SelectedSection?.Info.Category;
 
         Sections.Clear();
@@ -130,7 +141,12 @@ public sealed partial class AdvancedViewModel(
     {
         try
         {
-            startup.SetEnabled(item.Item, enabled);
+            var actual = startup.SetEnabled(item.Item, enabled);
+            if (actual != enabled)
+            {
+                item.SetEnabledSilently(actual);
+                _ = dialogs.ShowInfoAsync("Изменение не подтверждено", $"Windows не подтвердила новый режим автозагрузки «{item.Title}».");
+            }
         }
         catch (Exception ex)
         {

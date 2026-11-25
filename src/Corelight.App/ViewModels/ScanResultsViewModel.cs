@@ -32,6 +32,10 @@ public sealed partial class ScanResultsViewModel(
     public partial bool IsManualExpanded { get; set; }
 
     public bool HasNoManualItems => ManualItems.Count == 0;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasUnknownItems), nameof(UnknownHeader))]
+    public partial IReadOnlyList<TweakStatus> UnknownItems { get; set; } = [];
+    public bool HasUnknownItems => UnknownItems.Count > 0;
+    public string UnknownHeader => $"Не удалось проверить настроек: {UnknownItems.Count}";
     public bool HasRecommendedItems => Groups.Count > 0;
     public bool HasNoRecommendedItems => !HasRecommendedItems;
     public string ManualItemsHeader
@@ -148,6 +152,7 @@ public sealed partial class ScanResultsViewModel(
         _renderedReport = report;
         _renderedUserScanVersion = state.UserScanVersion;
         HasScan = report is not null;
+        UnknownItems = report?.UnknownItems ?? [];
         if (selection is null) IsManualExpanded = false;
         ManualItems = report?.ManualItems.Select(CreateItem).ToArray() ?? [];
         if (report is not null)

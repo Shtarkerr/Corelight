@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using Microsoft.Extensions.Logging.Abstractions;
 using Corelight.Core.Actions;
+using Corelight.Core.Backup;
 using Corelight.Core.Platform;
 using Corelight.Core.Tweaks;
 
@@ -73,7 +74,7 @@ public class AppRestoreTests
             queries.Add(id);
             return Task.FromResult(id == "missing" ? StoreRestoreAvailability.NotFound : StoreRestoreAvailability.Found);
         };
-        sys.Apps.Installed.UnionWith(["First", "Second", "Manual"]);
+        sys.Apps.Installed.UnionWith(["First", "Second", "Manual", "Provisioned"]);
         sys.Apps.Provisioned["Provisioned"] = "Provisioned_family";
         var first = TestSystem.Tweak(new AppxPackageAction { Package = "First", StoreId = "missing" },
             new AppxPackageAction { Package = "AlsoAbsent", Optional = true });
@@ -90,7 +91,7 @@ public class AppRestoreTests
             issue => { Assert.Same(first, issue.Tweak); Assert.Equal("WinGet не нашёл приложение в Microsoft Store.", issue.Reason); },
             issue => { Assert.Same(second, issue.Tweak); Assert.Equal("WinGet не нашёл приложение в Microsoft Store.", issue.Reason); },
             issue => { Assert.Same(manual, issue.Tweak); Assert.Equal("Автоматического возврата нет.", issue.Reason); });
-        Assert.Equal(["First", "Manual", "Second"], sys.Apps.Installed.Order());
+        Assert.Equal(["First", "Manual", "Provisioned", "Second"], sys.Apps.Installed.Order());
         Assert.Empty(sys.Apps.StoreInstalls);
         Assert.Empty(sys.Backups.GetAll());
     }
@@ -158,7 +159,7 @@ public class AppRestoreTests
     }
 
     [Fact]
-    public async Task Manual_confirmation_requires_all_original_package_states_to_match()
+    public async Task Manual_confirmation_ignores_a_package_that_was_not_removed()
     {
         var sys = new TestSystem();
         var tweak = TestSystem.Tweak(new AppxPackageAction { Package = "Current.Teams" }, new AppxPackageAction { Package = "Legacy.Teams" });
@@ -167,8 +168,9 @@ public class AppRestoreTests
         await engine.ApplyAsync(tweak);
         sys.Apps.Installed.UnionWith(["Current.Teams", "Legacy.Teams"]);
 
-        Assert.False(await engine.TryConfirmManualAppRestoreAsync(tweak));
-        Assert.NotNull(sys.Backups.Get(tweak.Id));
+        Assert.True(await engine.TryConfirmManualAppRestoreAsync(tweak));
+        Assert.Null(sys.Backups.Get(tweak.Id));
+        Assert.Contains("Legacy.Teams", sys.Apps.Installed);
         Assert.Empty(sys.Apps.StoreInstalls);
     }
 
@@ -180,7 +182,7 @@ public class AppRestoreTests
         var apps = new TimedOutApp();
         var backups = new MemoryBackupStore();
         var platform = new PlatformServices(new FakeRegistry(), new FakeServices(), new FakeTasks(), apps, new FakePower(), new FakeOneDrive());
-        var engine = new TweakEngine(platform, backups, NullLogger<TweakEngine>.Instance);
+        var engine = new TweakEngine(platform, backups, NullLogger<TweakEngine>.Instance) { ReadBootSession = () => TestSystem.TestBoot };
         var tweak = TestSystem.Tweak(
             new AppxPackageAction { Package = "First.Teams" },
             new AppxPackageAction { Package = "Second.Teams", Optional = optional });
@@ -189,9 +191,97 @@ public class AppRestoreTests
 
         Assert.IsType<AppxOperationTimeoutException>(error.InnerException);
         Assert.NotNull(backups.Get(tweak.Id));
+        Assert.Null(backups.Get(tweak.Id)!.Actions[0].AppxStartedInBoot);
+        Assert.Equal(TestSystem.TestBoot, backups.Get(tweak.Id)!.Actions[1].AppxStartedInBoot);
         Assert.False(apps.IsInstalled("First.Teams"));
         Assert.True(apps.IsInstalled("Second.Teams"));
         Assert.Equal(2, apps.RemovalAttempts);
+    }
+
+    [Fact]
+    public async Task Restarting_corelight_during_removal_preserves_history_until_windows_restarts()
+    {
+        var folder = Directory.CreateTempSubdirectory("Corelight.Appx.Tests-");
+        var path = Path.Combine(folder.FullName, "backup.json");
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sys = new TestSystem();
+        const string package = "Test.App";
+        sys.Apps.Installed.Add(package);
+        sys.Apps.BeforeRemove = () => { started.SetResult(); return finish.Task; };
+        var tweak = TestSystem.Tweak(new AppxPackageAction { Package = package, StoreId = "test-id" });
+        var applying = sys.CreateEngine(new JsonBackupStore(path)).ApplyAsync(tweak);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var disk = new JsonBackupStore(path);
+            var reopened = sys.CreateEngine(disk);
+            Assert.Equal(TestSystem.TestBoot, disk.Get(tweak.Id)!.Actions[0].AppxStartedInBoot);
+            Assert.Equal(TweakState.Unknown, await reopened.DetectAsync(tweak));
+            Assert.Contains("Перезагрузите Windows", (await Assert.ThrowsAsync<TweakException>(
+                () => reopened.TryConfirmManualAppRestoreAsync(tweak))).Message);
+            await Assert.ThrowsAsync<TweakException>(() => reopened.RevertAsync(tweak));
+            await Assert.ThrowsAsync<TweakException>(() => reopened.ApplyAsync(tweak));
+            Assert.NotNull(new JsonBackupStore(path).Get(tweak.Id));
+
+            finish.SetException(new AppxOperationTimeoutException(package, new TimeoutException()));
+            await Assert.ThrowsAsync<TweakException>(() => applying);
+            sys.Apps.Installed.Remove(package); // Windows completed the removal after the wait ended.
+            await Assert.ThrowsAsync<TweakException>(() => reopened.RevertAsync(tweak));
+            Assert.Empty(sys.Apps.StoreInstalls);
+
+            sys.Apps.StorePackages["test-id"] = package;
+            var afterReboot = sys.CreateEngine(new JsonBackupStore(path), TestSystem.TestBoot.AddHours(1));
+            await afterReboot.RevertAsync(tweak);
+            Assert.Contains(package, sys.Apps.Installed);
+            Assert.Null(new JsonBackupStore(path).Get(tweak.Id));
+        }
+        finally
+        {
+            finish.TrySetCanceled();
+            try { await applying; } catch (TweakException) { }
+            File.Delete(path);
+            folder.Delete();
+        }
+    }
+
+    [Fact]
+    public async Task Appx_timeout_during_rollback_requires_a_new_windows_boot_before_retrying()
+    {
+        const string package = "Test.App";
+        var sys = new TestSystem();
+        sys.Apps.Installed.Add(package);
+        sys.Apps.BeforeInstall = () => throw new TimeoutException("Store still busy");
+        var tweak = TestSystem.Tweak(new AppxPackageAction { Package = package, StoreId = "test-id" });
+        var engine = sys.CreateEngine();
+        await engine.ApplyAsync(tweak);
+
+        await Assert.ThrowsAsync<TweakException>(() => engine.RevertAsync(tweak));
+        Assert.Equal(TestSystem.TestBoot, sys.Backups.Get(tweak.Id)!.Actions[0].AppxStartedInBoot);
+        sys.Apps.Installed.Add(package); // Registry changed, but the Store operation might still be running.
+        await Assert.ThrowsAsync<TweakException>(() => sys.CreateEngine().TryConfirmManualAppRestoreAsync(tweak));
+
+        Assert.True(await sys.CreateEngine(boot: TestSystem.TestBoot.AddHours(1)).TryConfirmManualAppRestoreAsync(tweak));
+        Assert.Null(sys.Backups.Get(tweak.Id));
+    }
+
+    [Fact]
+    public async Task Old_pending_appx_backup_requires_one_verified_windows_restart()
+    {
+        var sys = new TestSystem();
+        sys.Apps.Installed.Add("Test.App");
+        var tweak = TestSystem.Tweak(new AppxPackageAction { Package = "Test.App" });
+        sys.Backups.Save(new BackupRecord
+        {
+            TweakId = tweak.Id,
+            Title = tweak.Title,
+            AppliedAt = TestSystem.TestBoot,
+            Actions = [new(true, "installed", ActionBackupPhase.Pending)]
+        });
+
+        await Assert.ThrowsAsync<TweakException>(() => sys.CreateEngine().TryConfirmManualAppRestoreAsync(tweak));
+        Assert.Equal(TestSystem.TestBoot, sys.Backups.Get(tweak.Id)!.Actions[0].AppxStartedInBoot);
+        Assert.True(await sys.CreateEngine(boot: TestSystem.TestBoot.AddHours(1)).TryConfirmManualAppRestoreAsync(tweak));
     }
 
     [Fact]
@@ -208,6 +298,67 @@ public class AppRestoreTests
         Assert.Empty(result.Warnings);
         Assert.False(sys.Apps.IsInstalled("MSTeams"));
         Assert.NotNull(sys.Backups.Get(tweak.Id));
+    }
+
+    [Fact]
+    public async Task Incomplete_inventory_cannot_confirm_an_absent_package()
+    {
+        var sys = new TestSystem();
+        var tweak = TestSystem.Tweak(new AppxPackageAction { Package = "MSTeams" });
+        sys.Apps.Installed.Add("MSTeams");
+        sys.Apps.InventoryUnavailableAfterRemoval = true;
+        var engine = sys.CreateEngine();
+
+        Assert.Equal(ApplyOutcome.Unconfirmed, (await engine.ApplyAsync(tweak)).Outcome);
+        Assert.Equal(TweakState.Unknown, await engine.DetectAsync(tweak));
+        Assert.False(await engine.TryConfirmManualAppRestoreAsync(tweak));
+        Assert.NotNull(sys.Backups.Get(tweak.Id));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Restore_requires_registration_for_the_current_user_even_when_present_elsewhere(bool provisioned)
+    {
+        const string package = "Test.Package";
+        var sys = new TestSystem();
+        var tweak = TestSystem.Tweak(new AppxPackageAction { Package = package, StoreId = "test-id" });
+        sys.Apps.Installed.Add(package);
+        if (provisioned) sys.Apps.Provisioned[package] = "Test.Package_family";
+        sys.Apps.StorePackages["test-id"] = package;
+        var engine = sys.CreateEngine();
+
+        await engine.ApplyAsync(tweak);
+        sys.Apps.OtherUsers.Add(package);
+        if (provisioned) sys.Apps.Provisioned[package] = "Test.Package_family";
+        await engine.RevertAsync(tweak);
+
+        Assert.Contains(package, sys.Apps.Installed);
+        Assert.Equal(["test-id"], sys.Apps.StoreInstalls);
+        Assert.Null(sys.Backups.Get(tweak.Id));
+    }
+
+    [Theory]
+    [InlineData("Microsoft.Copilot", "Microsoft.Copilot_8wekyb3d8bbwe", true)]
+    [InlineData("Microsoft.Copilot", "Microsoft.Copilot_other", false)]
+    [InlineData("Clipchamp.Clipchamp", "Clipchamp.Clipchamp_yxz26nhyzhsrt", true)]
+    public void Target_package_family_includes_a_known_publisher(string package, string family, bool expected)
+        => Assert.Equal(expected, WindowsAppxControl.MatchesFamily(package, family));
+
+    [Fact]
+    public async Task Cancellation_while_windows_is_busy_requests_cancel_and_preserves_uncertain_outcome()
+    {
+        using var cancel = new CancellationTokenSource();
+        var pending = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requested = false;
+        var waiting = WindowsAppxControl.WaitForPendingDeploymentAsync(pending.Task, () => requested = true, "MSTeams",
+            "удаляет", TimeSpan.FromMinutes(1), cancel.Token, NullLogger.Instance);
+        cancel.Cancel();
+
+        await Assert.ThrowsAsync<AppxOperationTimeoutException>(() => waiting);
+        Assert.True(requested);
+        Assert.False(pending.Task.IsCompleted);
+        pending.SetResult(0);
     }
 
     [Fact]

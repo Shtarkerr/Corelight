@@ -28,6 +28,9 @@ public class CopilotDesktopTests
         Assert.True(new TweakStatus(tweak, TweakState.NotApplied, null, tweak.Recommended).IsPreselected);
         Assert.Equal(TweakState.Applied, await engine.DetectAsync(catalog.Find("apps.copilot")!));
         Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
+        var issue = Assert.Single(await engine.CheckAppRestoresAsync([tweak, catalog.Find("apps.copilot")!]));
+        Assert.Same(tweak, issue.Tweak);
+        Assert.Contains("вручную", issue.Reason);
 
         Assert.True((await engine.ApplyAsync(tweak)).Confirmed);
         Assert.Equal(TweakState.Applied, await engine.DetectAsync(tweak));

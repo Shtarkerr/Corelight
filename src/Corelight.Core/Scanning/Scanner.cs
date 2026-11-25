@@ -21,6 +21,7 @@ public sealed record TweakStatus(TweakDefinition Tweak, TweakState State, string
 
 public sealed record ScanReport(HardwareProfile Hardware, IReadOnlyList<TweakStatus> Statuses)
 {
+    public IReadOnlyList<TweakStatus> UnknownItems => Statuses.Where(status => status.State == TweakState.Unknown).ToArray();
     public IEnumerable<TweakStatus> Suggestions => Statuses.Where(s => s.IsSuggestion).OrderByDescending(s => s.Tweak.Impact);
     public IEnumerable<TweakStatus> RecommendedItems => Suggestions.Where(s => s.IsPreselected);
     public IEnumerable<TweakStatus> ManualItems => Statuses
@@ -57,9 +58,6 @@ public sealed class Scanner(TweakCatalog catalog, TweakEngine engine, HardwarePr
             }
             return new ScanReport(hardware, statuses);
         }, ct);
-
-    public Task<TweakStatus> EvaluateAsync(TweakDefinition tweak, HardwareProfile hardware, CancellationToken ct = default) =>
-        Task.Run(() => EvaluateCoreAsync(tweak, hardware, ct), ct);
 
     private async Task<TweakStatus> EvaluateCoreAsync(TweakDefinition tweak, HardwareProfile hardware, CancellationToken ct)
     {

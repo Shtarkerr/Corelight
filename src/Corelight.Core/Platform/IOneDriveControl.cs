@@ -32,9 +32,10 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
     private readonly IProcessRunner _runner;
     private readonly ILogger<WindowsOneDriveControl> _log;
     private readonly OneDriveLocations _locations;
+    private readonly bool _productionDataDirectory;
 
     public WindowsOneDriveControl(IRegistryAccess registry, IProcessRunner runner, ILogger<WindowsOneDriveControl> log)
-        : this(registry, runner, log, OneDriveLocations.Current) { }
+        : this(registry, runner, log, OneDriveLocations.Current) => _productionDataDirectory = true;
 
     internal WindowsOneDriveControl(IRegistryAccess registry, IProcessRunner runner,
         ILogger<WindowsOneDriveControl> log, OneDriveLocations locations)
@@ -59,11 +60,20 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
 
         var installer = FindInstaller(scope) ?? throw new InvalidOperationException(
             "Штатный установщик OneDrive не найден. Удаление отменено, чтобы сохранить возможность возврата клиента.");
-        await VerifyMicrosoftSignatureAsync(installer, ct);
-        var cached = CachedInstaller(scope);
-        Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
-        File.Copy(installer, cached, overwrite: true);
-        await VerifyMicrosoftSignatureAsync(cached, ct);
+        var cached = PrepareCache(scope);
+        var temporary = cached + "." + Guid.NewGuid().ToString("N") + ".exe";
+        try
+        {
+            File.Copy(installer, temporary);
+            await VerifyMicrosoftSignatureAsync(temporary, ct);
+            File.Move(temporary, cached, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(temporary); }
+            catch (IOException ex) { _log.LogWarning(ex, "Не удалось удалить временную копию установщика OneDrive"); }
+            catch (UnauthorizedAccessException ex) { _log.LogWarning(ex, "Не удалось удалить временную копию установщика OneDrive"); }
+        }
         _log.LogInformation("Установщик OneDrive сохранён для возврата: {Path}, область {Scope}", cached, scope);
         await RunInstallerAsync(cached, scope == OneDriveScope.AllUsers ? ["/uninstall", "/allusers"] : ["/uninstall"], ct);
         // Сохраняем запись отката и при отложенном завершении удаления после перезагрузки.
@@ -78,7 +88,7 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
         if (current == scope) return;
         if (current != OneDriveScope.None)
             throw new InvalidOperationException("OneDrive уже установлен другим способом. Проверьте установку вручную; запись отката сохранена.");
-        var cached = CachedInstaller(scope);
+        var cached = PrepareCache(scope);
         if (!File.Exists(cached))
             throw new InvalidOperationException("Сохранённый установщик OneDrive не найден. Используйте «Как вернуть» и официальный установщик Microsoft, затем повторите откат.");
         await VerifyMicrosoftSignatureAsync(cached, ct);
@@ -101,6 +111,21 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
             ? "CurrentUser-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_locations.UserRoot.ToUpperInvariant())))[..16]
             : "AllUsers";
         return Path.Combine(_locations.DataRoot, "installers", "OneDrive", owner, "OneDriveSetup.exe");
+    }
+
+    private string PrepareCache(OneDriveScope scope)
+    {
+        var cached = CachedInstaller(scope);
+        if (_productionDataDirectory)
+        {
+            var installers = Path.Combine(_locations.DataRoot, "installers");
+            var product = Path.Combine(installers, "OneDrive");
+            foreach (var directory in new[] { _locations.DataRoot, installers, product, Path.GetDirectoryName(cached)! })
+                ProtectedDataDirectory.EnsureDirectory(directory, migrateLegacyPermissions: true);
+            ProtectedDataDirectory.ValidateFileIfPresent(cached);
+        }
+        else Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
+        return cached;
     }
 
     private IEnumerable<string> MachineRoots() => new[] { _locations.MachineRoot, _locations.MachineX86Root }.Distinct(StringComparer.OrdinalIgnoreCase);
@@ -129,6 +154,9 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
     {
         if (!await MicrosoftInstallerSignature.IsValidAsync(_runner, path, ct))
             throw new InvalidOperationException("Проверка подписи Microsoft у установщика OneDrive не пройдена. Установка или удаление не выполнялись.");
+        if (_productionDataDirectory &&
+            !string.Equals(System.Diagnostics.FileVersionInfo.GetVersionInfo(path).OriginalFilename, "OneDriveSetup.exe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Подписанный файл не является установщиком OneDrive.");
     }
 
     private async Task RunInstallerAsync(string path, IReadOnlyList<string> arguments, CancellationToken ct)
@@ -143,14 +171,7 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
 
     private List<string> RedirectedFolders()
     {
-        var roots = new List<string> { Path.Combine(_locations.ProfileRoot, "OneDrive") };
-        const string accounts = @"HKCU\Software\Microsoft\OneDrive\Accounts";
-        foreach (var account in _registry.GetSubKeyNames(accounts))
-            if (_registry.GetValue(accounts + "\\" + account, "UserFolder")?.Data is { Length: > 0 } root) roots.Add(root);
-        foreach (var variable in new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" })
-            if (Environment.GetEnvironmentVariable(variable) is { Length: > 0 } root) roots.Add(root);
-
-        var normalizedRoots = roots.Select(NormalizePath).ToArray();
+        var normalizedRoots = GetSyncRoots(_registry, _locations.ProfileRoot).Select(NormalizePath).ToArray();
         const string folders = @"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders";
         var redirected = new List<string>();
         foreach (var (name, title) in new[] { ("Desktop", "Рабочий стол"), ("Personal", "Документы"), ("My Pictures", "Изображения") })
@@ -165,4 +186,16 @@ public sealed class WindowsOneDriveControl : IOneDriveControl
     }
 
     private static string NormalizePath(string path) => Path.GetFullPath(Environment.ExpandEnvironmentVariables(path)).TrimEnd('\\');
+
+    internal static IEnumerable<string> GetSyncRoots(IRegistryAccess registry, string profileRoot)
+    {
+        if (!string.IsNullOrEmpty(profileRoot)) yield return Path.Combine(profileRoot, "OneDrive");
+        const string accounts = @"HKCU\Software\Microsoft\OneDrive\Accounts";
+        foreach (var account in registry.GetSubKeyNames(accounts))
+            if (registry.GetValue(accounts + "\\" + account, "UserFolder")?.Data is { Length: > 0 } folder)
+                yield return Environment.ExpandEnvironmentVariables(folder);
+        foreach (var variable in new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" })
+            if (Environment.GetEnvironmentVariable(variable) is { Length: > 0 } folder)
+                yield return Environment.ExpandEnvironmentVariables(folder);
+    }
 }

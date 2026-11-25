@@ -94,8 +94,13 @@ internal sealed class FakeApps : IAppxControl
     public List<string> StoreInstalls { get; } = [];
     public Dictionary<string, string> StorePackages { get; } = [];
     public Func<string, CancellationToken, Task<StoreRestoreAvailability>>? OnRestoreCheck { get; set; }
+    public Func<Task>? BeforeRemove { get; set; }
+    public Func<Task>? BeforeInstall { get; set; }
 
     public bool DelayRemovalUntilRefresh { get; set; }
+    public bool InventoryUnavailable { get; set; }
+    public bool InventoryUnavailableAfterRemoval { get; set; }
+    public HashSet<string> OtherUsers { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public void Refresh()
     {
@@ -103,7 +108,14 @@ internal sealed class FakeApps : IAppxControl
         _pendingRemovals.Clear();
     }
 
-    public bool IsInstalled(string packageName) => Installed.Contains(packageName) || Provisioned.ContainsKey(packageName);
+    public bool IsInstalled(string packageName) => GetPackageState(packageName).CurrentUser;
+
+    public AppxPackageState GetPackageState(string packageName)
+    {
+        if (InventoryUnavailable) throw new InvalidOperationException("Incomplete package inventory");
+        var current = Installed.Contains(packageName);
+        return new(current, current || OtherUsers.Contains(packageName), GetProvisionedFamily(packageName));
+    }
 
     public Task<StoreRestoreAvailability> CheckStoreRestoreAsync(string storeId, CancellationToken ct) =>
         OnRestoreCheck?.Invoke(storeId, ct) ?? Task.FromResult(StoreRestoreAvailability.Found);
@@ -117,19 +129,21 @@ internal sealed class FakeApps : IAppxControl
         return Task.CompletedTask;
     }
 
-    public Task RemoveAsync(string packageName, CancellationToken ct = default)
+    public async Task RemoveAsync(string packageName, CancellationToken ct = default)
     {
+        if (BeforeRemove is not null) await BeforeRemove();
+        OtherUsers.Remove(packageName);
         Provisioned.Remove(packageName);
         if (DelayRemovalUntilRefresh) _pendingRemovals.Add(packageName);
         else Installed.Remove(packageName);
-        return Task.CompletedTask;
+        InventoryUnavailable = InventoryUnavailableAfterRemoval;
     }
 
-    public Task InstallFromStoreAsync(string storeId, CancellationToken ct = default)
+    public async Task InstallFromStoreAsync(string storeId, CancellationToken ct = default)
     {
         StoreInstalls.Add(storeId);
+        if (BeforeInstall is not null) await BeforeInstall();
         if (StorePackages.TryGetValue(storeId, out var package)) Installed.Add(package);
-        return Task.CompletedTask;
     }
 }
 
@@ -137,6 +151,7 @@ internal sealed class FakePower : IPowerControl
 {
     public List<Guid> Schemes { get; } = [new("381b4222-f694-41f0-9685-ff5bb260df2e")];
     public Guid Active { get; set; } = new("381b4222-f694-41f0-9685-ff5bb260df2e");
+    public string CopyFingerprint { get; set; } = "original-settings";
 
     public Task<Guid> GetActiveSchemeAsync(CancellationToken ct = default) => Task.FromResult(Active);
 
@@ -153,6 +168,14 @@ internal sealed class FakePower : IPowerControl
     public Task DuplicateSchemeAsync(Guid source, Guid destination, CancellationToken ct = default)
     {
         Schemes.Add(destination);
+        return Task.CompletedTask;
+    }
+
+    public Task<string> GetSchemeFingerprintAsync(Guid scheme, CancellationToken ct = default) => Task.FromResult(CopyFingerprint);
+
+    public Task DeleteSchemeAsync(Guid scheme, CancellationToken ct = default)
+    {
+        Schemes.Remove(scheme);
         return Task.CompletedTask;
     }
 }
@@ -190,6 +213,7 @@ internal sealed class FakeComponents : IComponentPresence
 /// <summary>Собранное тестовое окружение: фейковая система + движок.</summary>
 internal sealed class TestSystem
 {
+    internal static readonly DateTimeOffset TestBoot = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     public FakeRegistry Registry { get; } = new();
     public FakeServices Services { get; } = new();
     public FakeTasks Tasks { get; } = new();
@@ -201,7 +225,8 @@ internal sealed class TestSystem
 
     public PlatformServices Platform => new(Registry, Services, Tasks, Apps, Power, OneDrive, Components);
 
-    public TweakEngine CreateEngine() => new(Platform, Backups, NullLogger<TweakEngine>.Instance);
+    public TweakEngine CreateEngine(IBackupStore? backups = null, DateTimeOffset? boot = null) =>
+        new(Platform, backups ?? Backups, NullLogger<TweakEngine>.Instance) { ReadBootSession = () => boot ?? TestBoot };
 
     public static TweakDefinition Tweak(params TweakAction[] actions) => new()
     {

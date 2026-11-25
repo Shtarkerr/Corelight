@@ -22,7 +22,7 @@ public class StartupManagerTests
         registry.SetValue(ApprovedKey, "Disabled", Binary("030000001122334455667788"));
         registry.SetValue(ApprovedKey, "Garbage", RegValue.DWord(3)); // не тот тип — Windows его игнорирует
 
-        var items = new StartupManager(registry).GetItems().Where(i => i.Location.StartsWith("Реестр")).ToDictionary(i => i.Name);
+        var items = new StartupManager(registry, _ => "").GetItems().Items.ToDictionary(i => i.Name);
 
         Assert.True(items["NoApproval"].IsEnabled);
         Assert.True(items["Enabled"].IsEnabled);
@@ -36,14 +36,57 @@ public class StartupManagerTests
     {
         var registry = new FakeRegistry();
         registry.SetValue(RunKey, "App", RegValue.String("app.exe"));
-        var manager = new StartupManager(registry);
-        var item = manager.GetItems().Single(i => i.Name == "App");
+        var manager = new StartupManager(registry, _ => "");
+        var item = Assert.Single(manager.GetItems().Items);
 
-        manager.SetEnabled(item, false);
-        Assert.False(manager.GetItems().Single(i => i.Name == "App").IsEnabled);
+        Assert.False(manager.SetEnabled(item, false));
+        Assert.False(Assert.Single(manager.GetItems().Items).IsEnabled);
 
-        manager.SetEnabled(item, true);
-        Assert.True(manager.GetItems().Single(i => i.Name == "App").IsEnabled);
+        Assert.True(manager.SetEnabled(item, true));
+        Assert.True(Assert.Single(manager.GetItems().Items).IsEnabled);
+    }
+
+    [Fact]
+    public void Unavailable_folder_does_not_hide_registry_sources()
+    {
+        var registry = new FakeRegistry();
+        registry.SetValue(RunKey, "App", RegValue.String("app.exe"));
+        var manager = new StartupManager(registry, _ => throw new UnauthorizedAccessException());
+
+        var scan = manager.GetItems();
+
+        Assert.Equal("App", Assert.Single(scan.Items).Name);
+        Assert.Equal(2, scan.Problems.Count);
+    }
+
+    [Fact]
+    public void Changed_command_is_not_disabled_from_a_stale_row()
+    {
+        var registry = new FakeRegistry();
+        registry.SetValue(RunKey, "App", RegValue.String("app.exe"));
+        var manager = new StartupManager(registry, _ => "");
+        var item = Assert.Single(manager.GetItems().Items);
+        registry.SetValue(RunKey, "App", RegValue.String("other.exe"));
+
+        Assert.Throws<InvalidOperationException>(() => manager.SetEnabled(item, false));
+        Assert.Null(registry.GetValue(ApprovedKey, "App"));
+    }
+
+    [Theory]
+    [InlineData("Teams", true)]
+    [InlineData("Teams Backup", false)]
+    [InlineData("OneDrive", true)]
+    [InlineData("MyOneDriveStartup", false)]
+    [InlineData("MicrosoftEdgeAutoLaunch_ABC", true)]
+    [InlineData("MicrosoftEdgeAutoLauncher", false)]
+    public void Autostart_hint_uses_known_exact_names_and_edge_prefix(string name, bool expected)
+    {
+        var registry = new FakeRegistry();
+        registry.SetValue(RunKey, name, RegValue.String("test.exe"));
+
+        var item = Assert.Single(new StartupManager(registry, _ => "").GetItems().Items);
+
+        Assert.Equal(expected, item.IsKnownUpdater);
     }
 
     private static RegValue Binary(string hex) => new(RegistryValueKind.Binary, hex);

@@ -105,7 +105,8 @@ public class TweakEngineTests
 
         Assert.Single(result.Warnings);
         Assert.False(sys.Tasks.Tasks[@"\A"]);
-        Assert.Equal(TweakState.Applied, await engine.DetectAsync(tweak));
+        Assert.Equal(ApplyOutcome.Partial, result.Outcome);
+        Assert.Equal(TweakState.NotApplied, await engine.DetectAsync(tweak));
     }
 
     [Fact]

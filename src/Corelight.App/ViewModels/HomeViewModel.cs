@@ -89,5 +89,7 @@ public sealed partial class HomeViewModel(
         ScanSummary = suggestions + manual == 0
             ? "Доступных настроек не найдено."
             : $"Рекомендаций: {suggestions}. Для ручной настройки: {manual}. Уже в порядке: {applied}.";
+        if (report.UnknownItems.Count > 0)
+            ScanSummary += $" Не удалось проверить настроек: {report.UnknownItems.Count}.";
     }
 }

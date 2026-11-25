@@ -83,10 +83,110 @@ public sealed class ReviewRegressionTests : IDisposable
         var sys = new TestSystem();
         var engine = sys.CreateEngine();
         var tweak = TestSystem.Tweak(new ServiceStartupAction { Service = "InstalledLater" });
-        await engine.ApplyAsync(tweak);
+        Assert.Equal(ApplyOutcome.NotApplicable, (await engine.ApplyAsync(tweak)).Outcome);
+        Assert.Null(sys.Backups.Get(tweak.Id));
         sys.Services.StartTypes["InstalledLater"] = ServiceStartType.Disabled;
-        await engine.RevertAsync(tweak);
         Assert.Equal(ServiceStartType.Disabled, sys.Services.StartTypes["InstalledLater"]);
+    }
+
+    [Fact]
+    public async Task Revert_preserves_a_skipped_value_modified_later()
+    {
+        var sys = new TestSystem();
+        var tweak = TestSystem.Tweak(
+            new RegistryValueAction { Path = Key, Name = "Skipped", Value = "1" },
+            new RegistryValueAction { Path = Key, Name = "Changed", Value = "1" });
+        sys.Registry.SetValue(Key, "Skipped", RegValue.DWord(1));
+        await sys.CreateEngine().ApplyAsync(tweak);
+        sys.Registry.SetValue(Key, "Skipped", RegValue.DWord(7));
+
+        await sys.CreateEngine().RevertAsync(tweak);
+
+        Assert.Equal(RegValue.DWord(7), sys.Registry.GetValue(Key, "Skipped"));
+        Assert.Null(sys.Registry.GetValue(Key, "Changed"));
+    }
+
+    [Fact]
+    public async Task Reapplying_an_effective_policy_does_not_add_a_second_policy_value()
+    {
+        var sys = new TestSystem();
+        var tweak = new TweakDefinition
+        {
+            Id = "test.alternatives",
+            Title = "Test",
+            Description = "Test",
+            AppliedWhenAnyActionMatches = true,
+            Actions =
+            [
+                new RegistryValueAction { Path = Key, Name = "First", Value = "1" },
+                new RegistryValueAction { Path = Key, Name = "Second", Value = "1" }
+            ],
+        };
+        sys.Registry.SetValue(Key, "First", RegValue.DWord(1));
+
+        var result = await sys.CreateEngine().ApplyAsync(tweak);
+
+        Assert.Equal(ApplyOutcome.AlreadyApplied, result.Outcome);
+        Assert.Null(sys.Registry.GetValue(Key, "Second"));
+        Assert.Empty(sys.Backups.GetAll());
+    }
+
+    [Fact]
+    public async Task Retried_rollback_of_old_history_preserves_user_edits_after_partial_restore()
+    {
+        var sys = new TestSystem();
+        sys.Tasks.Tasks["\\Blocked"] = false;
+        sys.Tasks.Tasks["\\Restored"] = false;
+        sys.Tasks.Protected.Add("\\Blocked");
+        var tweak = TestSystem.Tweak(new ScheduledTaskAction { Path = "\\Blocked" }, new ScheduledTaskAction { Path = "\\Restored" });
+        sys.Backups.Save(new BackupRecord
+        {
+            TweakId = tweak.Id,
+            Title = tweak.Title,
+            AppliedAt = DateTimeOffset.Now,
+            Actions = [new(true, "True"), new(true, "True")],
+        });
+
+        await Assert.ThrowsAsync<TweakException>(() => sys.CreateEngine().RevertAsync(tweak));
+        Assert.True(sys.Tasks.Tasks["\\Restored"]);
+        sys.Tasks.Tasks["\\Restored"] = false;
+        sys.Tasks.Protected.Clear();
+        await sys.CreateEngine().RevertAsync(tweak);
+
+        Assert.True(sys.Tasks.Tasks["\\Blocked"]);
+        Assert.False(sys.Tasks.Tasks["\\Restored"]);
+        Assert.Empty(sys.Backups.GetAll());
+    }
+
+    [Fact]
+    public async Task Reapplying_captures_a_service_that_became_available()
+    {
+        var sys = new TestSystem();
+        var tweak = TestSystem.Tweak(new RegistryValueAction { Path = Key, Name = "Changed", Value = "1" },
+            new ServiceStartupAction { Service = "InstalledLater" });
+        await sys.CreateEngine().ApplyAsync(tweak);
+        sys.Services.StartTypes["InstalledLater"] = ServiceStartType.Manual;
+        await sys.CreateEngine().ApplyAsync(tweak);
+        Assert.Equal(ServiceStartType.Disabled, sys.Services.StartTypes["InstalledLater"]);
+
+        await sys.CreateEngine().RevertAsync(tweak);
+
+        Assert.Equal(ServiceStartType.Manual, sys.Services.StartTypes["InstalledLater"]);
+        Assert.Null(sys.Registry.GetValue(Key, "Changed"));
+    }
+
+    [Fact]
+    public async Task Denied_optional_actions_do_not_report_success_or_leave_history()
+    {
+        var sys = new TestSystem();
+        const string taskPath = @"\Test";
+        sys.Tasks.Tasks[taskPath] = true;
+        sys.Tasks.Protected.Add(taskPath);
+        var tweak = TestSystem.Tweak(new ScheduledTaskAction { Path = taskPath, Optional = true });
+
+        Assert.Equal(ApplyOutcome.Unconfirmed, (await sys.CreateEngine().ApplyAsync(tweak)).Outcome);
+        Assert.Null(sys.Backups.Get(tweak.Id));
+        Assert.True(sys.Tasks.Tasks[taskPath]);
     }
 
     [Fact]
@@ -165,6 +265,57 @@ public sealed class ReviewRegressionTests : IDisposable
         await engine.RevertAsync(tweak);
         Assert.Equal("Target=0;Other=2;New=3;", sys.Registry.GetValue(Key, "Graphics")!.Data);
         Assert.Null(sys.Backups.Get(tweak.Id));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("opaque;Other=1;Other=2")]
+    [InlineData("opaque;Target=8; Target=0 ;Other=1;")]
+    public async Task Registry_list_roundtrips_empty_duplicates_and_opaque_segments(string value)
+    {
+        var sys = new TestSystem();
+        var tweak = TestSystem.Tweak(new RegistryListEntryAction { Path = Key, Name = "Graphics", Key = "Target", Value = "1" });
+        var before = RegValue.String(value);
+        sys.Registry.SetValue(Key, "Graphics", before);
+        var engine = sys.CreateEngine();
+
+        await engine.ApplyAsync(tweak);
+        await engine.RevertAsync(tweak);
+
+        Assert.Equal(before, sys.Registry.GetValue(Key, "Graphics"));
+    }
+
+    [Fact]
+    public async Task Registry_list_rollback_accepts_independently_added_separators()
+    {
+        var sys = new TestSystem();
+        var tweak = TestSystem.Tweak(new RegistryListEntryAction { Path = Key, Name = "Graphics", Key = "Target", Value = "1" });
+        var engine = sys.CreateEngine();
+
+        await engine.ApplyAsync(tweak);
+        sys.Registry.SetValue(Key, "Graphics", RegValue.String("Target=1;;"));
+        await engine.RevertAsync(tweak);
+
+        Assert.Equal(RegValue.String(";"), sys.Registry.GetValue(Key, "Graphics"));
+        Assert.Empty(sys.Backups.GetAll());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Only_an_unmodified_scheme_created_by_corelight_is_deleted_on_revert(bool modify)
+    {
+        var sys = new TestSystem();
+        var plan = new PowerPlanAction { Scheme = Guid.NewGuid(), CopyGuid = Guid.NewGuid() };
+        var tweak = TestSystem.Tweak(plan);
+        var engine = sys.CreateEngine();
+
+        await engine.ApplyAsync(tweak);
+        if (modify) sys.Power.CopyFingerprint = "modified by the user";
+        await engine.RevertAsync(tweak);
+
+        Assert.Equal(PowerPlanAction.Balanced, sys.Power.Active);
+        Assert.Equal(modify, sys.Power.Schemes.Contains(plan.CopyGuid));
     }
 
     [Fact]

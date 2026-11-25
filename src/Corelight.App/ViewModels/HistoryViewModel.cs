@@ -75,12 +75,21 @@ public sealed partial class HistoryViewModel(
         if (item.NeedsManualRestore)
         {
             bool restored;
-            using (state.BeginBusy("Проверка возврата приложения…"))
-                restored = await Task.Run(() => engine.TryConfirmManualAppRestoreAsync(item.Tweak));
+            try
+            {
+                using (state.BeginBusy("Проверка возврата приложения…"))
+                    restored = await Task.Run(() => engine.TryConfirmManualAppRestoreAsync(item.Tweak));
+            }
+            catch (TweakException ex)
+            {
+                await dialogs.ShowInfoAsync("Возврат не подтверждён", ex.Message);
+                return;
+            }
             if (restored)
                 state.MarkSystemChanged();
             else
-                await dialogs.ShowInfoAsync("Возврат не подтверждён", "Установите приложение по инструкции «Как вернуть» и повторите проверку. Запись остаётся в истории.");
+                await dialogs.ShowInfoAsync("Возврат не подтверждён",
+                    "Установите приложение для текущей учётной записи и повторите проверку. Если пакет был подготовлен для новых профилей, требуется восстановить и предустановку. Запись остаётся в истории.");
             Reload();
             return;
         }

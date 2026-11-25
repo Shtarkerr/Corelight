@@ -37,12 +37,12 @@ public partial class App : Application
             return;
         }
 
-        string? tourDir = null;
 #if DEBUG
-        // Тур только читает систему, поэтому при разработке его можно запускать без прав администратора.
-        tourDir = e.Args.FirstOrDefault(a => a.StartsWith("--tour=", StringComparison.Ordinal))?["--tour=".Length..];
+        // Тур читает систему и сохраняет снимки интерфейса.
+        var tourDir = e.Args.FirstOrDefault(a => a.StartsWith("--tour=", StringComparison.Ordinal))?["--tour=".Length..];
 #endif
-        if (tourDir is null && !new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
+        using var identity = WindowsIdentity.GetCurrent();
+        if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
         {
             System.Windows.MessageBox.Show(
                 "Для изменения системных настроек нужны права администратора. Запустите программу от имени администратора.",
@@ -51,7 +51,15 @@ public partial class App : Application
             return;
         }
 
-        Directory.CreateDirectory(AppPaths.LogDirectory);
+        try { ProtectedDataDirectory.Initialize(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            System.Windows.MessageBox.Show(
+                $"Не удалось безопасно открыть каталог данных Corelight. Проверьте владельца и права доступа.\n\n{ex.Message}",
+                "Corelight", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.File(Path.Combine(AppPaths.LogDirectory, "log-.txt"), rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14)

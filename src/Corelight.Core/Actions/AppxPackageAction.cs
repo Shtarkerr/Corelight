@@ -1,5 +1,6 @@
 using Corelight.Core.Platform;
 using Corelight.Core.Tweaks;
+using System.Text.Json;
 
 namespace Corelight.Core.Actions;
 
@@ -17,39 +18,55 @@ public sealed class AppxPackageAction : TweakAction
     /// <summary>ID приложения в Microsoft Store; без него вернуть приложение можно только вручную.</summary>
     public string? StoreId { get; init; }
 
-    public override Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct) =>
-        Task.FromResult(p.Apps.IsInstalled(Package) ? ActionState.NotApplied : ActionState.Applied);
+    public override Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct)
+    {
+        var state = p.Apps.GetPackageState(Package);
+        return Task.FromResult(state.CurrentUser ? ActionState.NotApplied :
+            state.Present ? ActionState.NotApplicable : ActionState.Applied);
+    }
 
     public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct)
     {
-        if (!p.Apps.IsInstalled(Package)) return Task.FromResult<string?>(null);
-        var family = StoreId is null ? null : p.Apps.GetProvisionedFamily(Package);
-        return Task.FromResult<string?>(family is null ? Installed : ProvisionedPrefix + family);
+        var state = p.Apps.GetPackageState(Package);
+        return Task.FromResult(state.Present ? JsonSerializer.Serialize(state) : null);
     }
 
-    public override bool CapturedStateMatches(string? current, string? original) =>
-        (original == Installed && current?.StartsWith(ProvisionedPrefix, StringComparison.Ordinal) == true)
-        || string.Equals(current, original, StringComparison.OrdinalIgnoreCase);
+    public override bool CapturedStateMatches(string? current, string? original)
+    {
+        if (current is null || original is null) return current == original;
+        var now = Parse(current);
+        var before = Parse(original);
+        return now.CurrentUser == before.CurrentUser
+            && (before.CurrentUser || now.AnyUser == before.AnyUser)
+            && (before.ProvisionedFamily is null ||
+                string.Equals(now.ProvisionedFamily, before.ProvisionedFamily, StringComparison.OrdinalIgnoreCase));
+    }
 
     public override Task ApplyAsync(PlatformServices p, CancellationToken ct) => p.Apps.RemoveAsync(Package, ct);
 
     public override async Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct)
     {
         if (captured is null) return;
-        await ReinstallAsync(p, ct);
-        if (captured.StartsWith(ProvisionedPrefix, StringComparison.Ordinal))
-            await p.Apps.ProvisionAsync(Package, captured[ProvisionedPrefix.Length..], ct);
+        var state = Parse(captured);
+        p.Apps.Refresh();
+        if (state.CurrentUser && !p.Apps.GetPackageState(Package).CurrentUser)
+        {
+            if (StoreId is null)
+                throw new InvalidOperationException("Верните приложение вручную и проверьте его установку.");
+            await p.Apps.InstallFromStoreAsync(StoreId, ct);
+        }
+        if (state.ProvisionedFamily is { } family)
+            await p.Apps.ProvisionAsync(Package, family, ct);
     }
 
     public override string Describe() => $"приложение {Package}";
 
-    private Task ReinstallAsync(PlatformServices p, CancellationToken ct)
+    private static AppxPackageState Parse(string captured)
     {
-        p.Apps.Refresh();
-        if (p.Apps.IsInstalled(Package))
-            return Task.CompletedTask;
-        if (StoreId is null)
-            throw new InvalidOperationException("Это приложение можно вернуть только вручную через Microsoft Store.");
-        return p.Apps.InstallFromStoreAsync(StoreId, ct);
+        if (captured == Installed) return new(true, true, null);
+        if (captured.StartsWith(ProvisionedPrefix, StringComparison.Ordinal))
+            return new(true, true, captured[ProvisionedPrefix.Length..]);
+        return JsonSerializer.Deserialize<AppxPackageState>(captured)
+            ?? throw new InvalidDataException("Некорректный снимок пакета.");
     }
 }

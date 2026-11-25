@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Corelight.Core.Actions;
 using Corelight.Core.Backup;
 using Corelight.Core.Platform;
+using Corelight.Core.SystemInfo;
 
 namespace Corelight.Core.Tweaks;
 
@@ -18,13 +19,19 @@ public enum TweakState
 public sealed class TweakException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <param name="Warnings">Ошибки необязательных действий, которые не помешали применить твик.</param>
-public sealed record TweakResult(IReadOnlyList<string> Warnings, bool Confirmed = true, bool RequiresReboot = false);
+public enum ApplyOutcome { Applied, AlreadyApplied, NotApplicable, Partial, Unconfirmed }
+public sealed record TweakResult(IReadOnlyList<string> Warnings, ApplyOutcome Outcome, bool RequiresReboot = false)
+{
+    public bool Confirmed => Outcome is ApplyOutcome.Applied or ApplyOutcome.AlreadyApplied;
+}
 public sealed record TweakDetection(TweakState State, string? Error = null);
 public sealed record AppRestoreIssue(TweakDefinition Tweak, string Reason);
 
 public sealed class TweakEngine(PlatformServices platform, IBackupStore backups, ILogger<TweakEngine> log)
 {
+    private const string AppxRestartRequired = "Предыдущая операция с приложением могла не завершиться. Перезагрузите Windows и повторите проверку или откат. Запись сохранена в истории.";
     private readonly ConcurrentDictionary<string, string> _blockedChanges = new();
+    internal Func<DateTimeOffset> ReadBootSession { get; init; } = WindowsBootSession.Read;
 
     public void RefreshExternalState()
     {
@@ -33,22 +40,23 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
     }
     public IBackupStore Backups => backups;
 
-    /// <summary>Проверяет доступность возврата установленных AppX до применения выбранных изменений.</summary>
+    /// <summary>Проверяет доступность возврата приложений перед удалением.</summary>
     public async Task<IReadOnlyList<AppRestoreIssue>> CheckAppRestoresAsync(
         IReadOnlyList<TweakDefinition> tweaks, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var candidates = tweaks.Select(tweak => (Tweak: tweak, Packages: tweak.Actions.OfType<AppxPackageAction>().ToArray()))
-            .Where(candidate => candidate.Packages.Length > 0).ToArray();
+        var candidates = tweaks.Select(tweak => (Tweak: tweak, Packages: tweak.Actions.OfType<AppxPackageAction>().ToArray(),
+                Desktop: tweak.Actions.Any(action => action is CopilotDesktopAction)))
+            .Where(candidate => candidate.Packages.Length > 0 || candidate.Desktop).ToArray();
         if (candidates.Length == 0) return [];
 
-        Dictionary<string, bool> installed;
+        Dictionary<string, AppxPackageState> inventory;
         try
         {
             platform.Apps.Refresh();
-            installed = candidates.SelectMany(candidate => candidate.Packages)
+            inventory = candidates.SelectMany(candidate => candidate.Packages)
                 .Select(package => package.Package).Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(package => package, platform.Apps.IsInstalled, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(package => package, platform.Apps.GetPackageState, StringComparer.OrdinalIgnoreCase);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -57,7 +65,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         }
 
         var storeIds = candidates.SelectMany(candidate => candidate.Packages)
-            .Where(package => installed[package.Package]).Select(package => package.StoreId).OfType<string>()
+            .Where(package => inventory[package.Package].CurrentUser).Select(package => package.StoreId).OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var results = new ConcurrentDictionary<string, StoreRestoreAvailability>(StringComparer.OrdinalIgnoreCase);
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -82,15 +90,30 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         ct.ThrowIfCancellationRequested();
 
         var issues = new List<AppRestoreIssue>();
-        foreach (var (tweak, packages) in candidates)
+        foreach (var (tweak, packages, desktop) in candidates)
         {
-            var reasons = packages.Where(package => installed[package.Package])
-                .Select(package => package.StoreId is { } id
+            var reasons = packages.Where(package => inventory[package.Package].Present)
+                .Select(package => !inventory[package.Package].CurrentUser
+                    ? "Приложение недоступно для удаления в текущем профиле."
+                    : package.StoreId is { } id
                     ? DescribeRestoreAvailability(results.GetValueOrDefault(id, StoreRestoreAvailability.TimedOut))
                     : tweak.RestoreHelpUrl is null ? "Автоматического возврата нет." : "Возврат только вручную.")
-                .OfType<string>().Distinct().ToArray();
-            if (reasons.Length > 0)
-                issues.Add(new(tweak, string.Join(" ", reasons)));
+                .OfType<string>().ToList();
+            if (desktop)
+            {
+                try
+                {
+                    if (platform.CopilotDesktop?.IsInstalled() == true)
+                        reasons.Add("Возврат только вручную.");
+                }
+                catch (Exception ex)
+                {
+                    log.LogWarning(ex, "Не удалось проверить настольный Copilot перед удалением");
+                    reasons.Add("Не удалось проверить настольный Copilot.");
+                }
+            }
+            if (reasons.Count > 0)
+                issues.Add(new(tweak, string.Join(" ", reasons.Distinct())));
         }
         return issues;
     }
@@ -115,10 +138,21 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         if (_blockedChanges.TryGetValue(tweak.Id, out var reason))
             return new(TweakState.Unknown, reason);
 
-        var states = new List<(TweakAction Action, ActionState State)>();
+        try
+        {
+            if (backups.Get(tweak.Id) is { } record && record.Actions.Count == tweak.Actions.Count &&
+                UnsettledAppxActions(tweak, record).Any(i => IsInCurrentBoot(record.Actions[i])))
+                return new(TweakState.Unknown, AppxRestartRequired);
+        }
+        catch (TweakException ex)
+        {
+            return new(TweakState.Unknown, ex.Message);
+        }
+
+        var states = new List<ActionState>();
         foreach (var action in tweak.Actions)
         {
-            try { states.Add((action, await action.DetectAsync(platform, ct))); }
+            try { states.Add(await action.DetectAsync(platform, ct)); }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 log.LogWarning(ex, "Не удалось определить состояние {Action}", action.Describe());
@@ -126,27 +160,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             }
         }
 
-        var relevant = states.Where(s => s.State != ActionState.NotApplicable).ToList();
-        if (relevant.Count == 0)
-            return new(TweakState.NotApplicable);
-
-        if (tweak.AppliedWhenAnyActionMatches)
-            return new(relevant.Any(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied);
-
-        // Состояние определяют обязательные действия.
-        // Варианты одного приложения (например, старый/новый Teams) считаются установленными,
-        // пока присутствует хотя бы один пакет; optional влияет на обработку ошибок, а не на наличие.
-        var required = relevant.Where(s => !s.Action.Optional || s.Action is AppxPackageAction).ToList();
-        if (required.Count > 0)
-            return new(required.All(s => s.State == ActionState.Applied) ? TweakState.Applied : TweakState.NotApplied);
-
-        // Твик только из необязательных действий (набор задач планировщика) применён, если применено всё.
-        // Исключение — мы его уже применяли, и часть задач Windows отключить не дала: повторять бессмысленно.
-        if (relevant.All(s => s.State == ActionState.Applied))
-            return new(TweakState.Applied);
-        return new(backups.Get(tweak.Id) is not null && relevant.Any(s => s.State == ActionState.Applied)
-            ? TweakState.Applied
-            : TweakState.NotApplied);
+        return new(Summarize(tweak, states));
     }
 
     /// <summary>Объясняет, какое изменение той же группы нужно откатить перед применением.</summary>
@@ -168,56 +182,113 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         RefreshExternalState();
         log.LogInformation("Применение твика {Tweak}", tweak.Id);
 
-        // Если твик уже применялся, сохраняем самый первый бэкап: в нём настоящее исходное состояние.
-        var record = backups.Get(tweak.Id);
-        var createdRecord = false;
-        if (record is not null) EnsureCompatibleBackup(tweak, record);
-        if (record is null)
+        var original = backups.Get(tweak.Id);
+        if (original is not null)
         {
-            record = await CaptureAsync(tweak, ct);
-            backups.Save(record);
-            createdRecord = true;
+            EnsureCompatibleBackup(tweak, original);
+            RequireSettledAppx(tweak, original);
         }
 
+        var initial = new ActionState[tweak.Actions.Count];
+        for (var i = 0; i < initial.Length; i++)
+            initial[i] = await tweak.Actions[i].DetectAsync(platform, ct);
+
+        var initialState = Summarize(tweak, initial);
+        if (initialState is TweakState.Applied or TweakState.NotApplicable)
+            return new TweakResult([], initialState == TweakState.Applied ? ApplyOutcome.AlreadyApplied : ApplyOutcome.NotApplicable);
+
+        var record = original ?? new BackupRecord
+        {
+            TweakId = tweak.Id,
+            Title = tweak.Title,
+            AppliedAt = DateTimeOffset.Now,
+            Actions = initial.Select(_ => Untouched).ToArray(),
+            ActionTargets = Targets(tweak),
+        };
         var attempted = new List<(int Index, string? Before)>();
-        var optionalFailures = new HashSet<int>();
         var warnings = new List<string>();
+        var applied = 0;
+        var incomplete = 0;
+        var servicePending = false;
         try
         {
-            for (var i = 0; i < tweak.Actions.Count; i++)
+            for (var i = 0; i < initial.Length; i++)
             {
+                ct.ThrowIfCancellationRequested();
+                if (initial[i] != ActionState.NotApplied) continue;
+
                 var action = tweak.Actions[i];
-                if (!record.Actions[i].Applicable) continue;
+                var current = record.Actions[i];
+                var before = await action.CaptureAsync(platform, ct);
                 if (await action.DetectAsync(platform, ct) != ActionState.NotApplied)
                     continue;
 
+                var snapshot = current.NeedsRestore ? current : new ActionBackup(true, before, ActionBackupPhase.Pending);
+                async Task ChangeAsync()
+                {
+                    attempted.Add((i, before));
+                    if (action is PowerPlanAction plan)
+                        await plan.ApplyAsync(platform, fingerprint => record = SaveAction(record, i,
+                            record.Actions[i] with { PowerCopyFingerprint = fingerprint }), ct);
+                    else
+                        await action.ApplyAsync(platform, ct);
+                }
+
                 try
                 {
-                    var before = createdRecord ? record.Actions[i].State : await action.CaptureAsync(platform, ct);
-                    // Действие может успеть изменить систему перед исключением.
-                    attempted.Add((i, before));
-                    await action.ApplyAsync(platform, ct);
+                    if (action is AppxPackageAction)
+                        await RunAppxMutationAsync(ChangeAsync, boot => record = SaveAction(record, i, WithAppxBoot(snapshot, boot)));
+                    else
+                    {
+                        if (!current.NeedsRestore)
+                            record = SaveAction(record, i, snapshot);
+                        await ChangeAsync();
+                    }
                 }
-                catch (Exception ex) when (action.Optional && ex is not (OperationCanceledException or AppxOperationTimeoutException))
+                catch (Exception ex) when (action.Optional && ex is not OperationCanceledException &&
+                    record.Actions[i].AppxStartedInBoot is null)
                 {
-                    optionalFailures.Add(i);
                     log.LogWarning(ex, "Необязательное действие {Action} твика {Tweak} не выполнено", action.Describe(), tweak.Id);
                     warnings.Add($"{action.Describe()}: {ex.Message}");
+                    incomplete++;
+                    if (!current.NeedsRestore && await MatchesBackupAsync(action, before, ct))
+                        record = SaveAction(record, i, Untouched);
+                    continue;
+                }
+
+                if (await ConfirmAppliedAsync(action, ct))
+                {
+                    applied++;
+                    if (record.Actions[i].Phase == ActionBackupPhase.Pending)
+                        record = SaveAction(record, i, record.Actions[i] with { Phase = ActionBackupPhase.Applied, AppxOperationReturned = false });
+                }
+                else
+                {
+                    incomplete++;
+                    warnings.Add($"Результат для «{action.Describe()}» пока не подтверждён. Бэкап сохранён.");
+                    servicePending |= action is ServiceStartupAction { LastStopPending: true };
                 }
             }
+
+            if (attempted.Count > 0 && !record.Actions.Any(action => action.NeedsRestore))
+                backups.Remove(tweak.Id);
+        }
+        catch (AppxOperationTimeoutException ex)
+        {
+            log.LogError(ex, "Операция AppX для {Tweak} не завершилась; бэкап сохранён", tweak.Id);
+            throw new TweakException($"Не удалось применить «{tweak.Title}»: {ex.Message} {AppxRestartRequired}", ex);
         }
         catch (Exception ex)
         {
             if (ex is RegistryWriteDeniedException)
                 _blockedChanges.TryAdd(tweak.Id, ex.Message);
 
-            if (ex is AppxOperationTimeoutException)
+            if (attempted.Any(item => record.Actions[item.Index].AppxStartedInBoot is not null))
             {
-                // Windows may complete a deployment even after Cancel. Rolling it back now could race
-                // with that deployment; keep the original state until the user can inspect it.
-                log.LogError(ex, "Удаление приложения {Tweak} превысило время ожидания; бэкап сохранён", tweak.Id);
-                throw new TweakException($"Не удалось применить «{tweak.Title}»: {ex.Message} Исходное состояние сохранено в истории.", ex);
+                log.LogError(ex, "Исход операции AppX для {Tweak} не подтверждён; бэкап сохранён", tweak.Id);
+                throw new TweakException(AppxRestartRequired, ex);
             }
+
             log.LogError(ex, "Ошибка применения твика {Tweak}, откатываем выполненные действия", tweak.Id);
             var rollbackErrors = new List<string>();
             for (var j = attempted.Count - 1; j >= 0; j--)
@@ -225,12 +296,15 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
                 var (i, before) = attempted[j];
                 try
                 {
-                    // Например, отказ в доступе мог произойти до изменения цели.
-                    if (await MatchesBackupAsync(tweak.Actions[i], before, CancellationToken.None))
-                        continue;
-                    await tweak.Actions[i].RevertAsync(platform, before, CancellationToken.None);
-                    if (!await MatchesBackupAsync(tweak.Actions[i], before, CancellationToken.None))
-                        throw new InvalidOperationException($"Возврат {tweak.Actions[i].Describe()} пока не подтверждён.");
+                    var action = tweak.Actions[i];
+                    await RestoreActionAsync(action, before, CancellationToken.None,
+                        boot => record = SaveAction(record, i, WithAppxBoot(record.Actions[i], boot)));
+                    var previous = original?.Actions[i] ?? Untouched;
+                    if (tweak.Actions[i] is PowerPlanAction plan &&
+                        record.Actions[i].PowerCopyFingerprint != previous.PowerCopyFingerprint)
+                        await plan.RemoveUnchangedCopyAsync(platform, record.Actions[i].PowerCopyFingerprint, CancellationToken.None);
+                    if (record.Actions[i] != previous)
+                        record = SaveAction(record, i, previous);
                 }
                 catch (Exception rollbackEx)
                 {
@@ -238,7 +312,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
                     rollbackErrors.Add($"{tweak.Actions[i].Describe()}: {rollbackEx.Message}");
                 }
             }
-            if (createdRecord && rollbackErrors.Count == 0)
+            if (original is null && attempted.Count > 0 && !record.Actions.Any(action => action.NeedsRestore))
                 backups.Remove(tweak.Id);
 
             if (ex is OperationCanceledException)
@@ -248,20 +322,109 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             throw new TweakException($"Не удалось применить «{tweak.Title}»: {ex.Message}{rollbackMessage}", ex);
         }
 
-        var confirmed = true;
-        var unconfirmed = new HashSet<int>();
-        foreach (var (i, _) in attempted)
-        {
-            if (optionalFailures.Contains(i)) continue;
-            if (await ConfirmAppliedAsync(tweak.Actions[i], ct)) continue;
-            unconfirmed.Add(i);
-            warnings.Add($"Результат для «{tweak.Actions[i].Describe()}» пока не подтверждён. Бэкап сохранён; проверьте состояние после перезагрузки.");
-            if (!tweak.Actions[i].Optional) confirmed = false;
-        }
-        var servicePending = unconfirmed.Any(i => tweak.Actions[i] is ServiceStartupAction { LastStopPending: true });
         if (servicePending)
-            warnings.Add("Одна из служб не остановилась сразу; для завершения отключения перезагрузите Windows.");
-        return new TweakResult(warnings, confirmed, servicePending);
+            warnings.Add("Одна из служб не остановилась сразу. Для завершения отключения перезагрузите Windows.");
+        if (incomplete > 0)
+            return new TweakResult(warnings, applied > 0 ? ApplyOutcome.Partial : ApplyOutcome.Unconfirmed, servicePending);
+        if (applied > 0)
+            return new TweakResult(warnings, ApplyOutcome.Applied);
+
+        var detection = await DetectDetailedAsync(tweak, ct);
+        var outcome = detection.State switch
+        {
+            TweakState.Applied => ApplyOutcome.AlreadyApplied,
+            TweakState.NotApplicable => ApplyOutcome.NotApplicable,
+            _ => ApplyOutcome.Unconfirmed,
+        };
+        return new TweakResult(warnings, outcome);
+    }
+
+    private static readonly ActionBackup Untouched = new(false, null, ActionBackupPhase.Untouched);
+
+    private static IEnumerable<int> UnsettledAppxActions(TweakDefinition tweak, BackupRecord record) =>
+        Enumerable.Range(0, tweak.Actions.Count).Where(i => tweak.Actions[i] is AppxPackageAction &&
+            (record.Actions[i].AppxStartedInBoot is not null ||
+             record.Actions[i].Phase == ActionBackupPhase.Pending && !record.Actions[i].AppxOperationReturned));
+
+    private bool IsInCurrentBoot(ActionBackup action) =>
+        action.AppxStartedInBoot is not { } started || GetBootSession() <= started;
+
+    private void RequireSettledAppx(TweakDefinition tweak, BackupRecord record)
+    {
+        var pending = UnsettledAppxActions(tweak, record).Where(i => IsInCurrentBoot(record.Actions[i])).ToArray();
+        if (pending.Length == 0) return;
+
+        // Старые записи Pending не хранили время загрузки. Отсчёт начинается при первой попытке восстановления.
+        if (pending.Any(i => record.Actions[i].AppxStartedInBoot is null))
+        {
+            var entries = record.Actions.ToArray();
+            var boot = GetBootSession();
+            foreach (var i in pending)
+                if (entries[i].AppxStartedInBoot is null)
+                    entries[i] = WithAppxBoot(entries[i], boot);
+            backups.Save(record with { Actions = entries });
+        }
+        throw new TweakException(AppxRestartRequired);
+    }
+
+    private DateTimeOffset GetBootSession()
+    {
+        try { return ReadBootSession(); }
+        catch (Exception ex)
+        {
+            throw new TweakException("Не удалось проверить время последней загрузки Windows. Изменение приложения остановлено.", ex);
+        }
+    }
+
+    private static ActionBackup WithAppxBoot(ActionBackup snapshot, DateTimeOffset? boot) =>
+        snapshot with
+        {
+            AppxStartedInBoot = boot,
+            // Отличаем завершённое ожидание от старых записей Pending без отметки загрузки.
+            AppxOperationReturned = boot is null && snapshot.Phase == ActionBackupPhase.Pending,
+        };
+
+    private async Task RunAppxMutationAsync(Func<Task> mutate, Action<DateTimeOffset?> saveBoot)
+    {
+        saveBoot(GetBootSession());
+        try { await mutate(); }
+        catch (Exception ex) when (ex is not (TimeoutException or OperationCanceledException))
+        {
+            saveBoot(null);
+            throw;
+        }
+        saveBoot(null);
+    }
+
+    private static TweakState Summarize(TweakDefinition tweak, IEnumerable<ActionState> states)
+    {
+        var relevant = states.Where(state => state != ActionState.NotApplicable).ToList();
+        if (relevant.Count == 0) return TweakState.NotApplicable;
+        var effective = tweak.AppliedWhenAnyActionMatches
+            ? relevant.Any(state => state == ActionState.Applied)
+            : relevant.All(state => state == ActionState.Applied);
+        return effective ? TweakState.Applied : TweakState.NotApplied;
+    }
+
+    private BackupRecord SaveAction(BackupRecord record, int index, ActionBackup action)
+    {
+        var entries = record.Actions.ToArray();
+        entries[index] = action;
+        var updated = record with { Actions = entries };
+        backups.Save(updated);
+        return updated;
+    }
+
+    private async Task RestoreActionAsync(TweakAction action, string? state, CancellationToken ct, Action<DateTimeOffset?> saveAppxBoot)
+    {
+        if (await MatchesBackupAsync(action, state, ct)) return;
+
+        if (action is AppxPackageAction)
+            await RunAppxMutationAsync(() => action.RevertAsync(platform, state, ct), saveAppxBoot);
+        else
+            await action.RevertAsync(platform, state, ct);
+        if (!await MatchesBackupAsync(action, state, ct))
+            throw new InvalidOperationException($"Возврат {action.Describe()} пока не подтверждён. Исходный бэкап сохранён.");
     }
 
     private async Task<bool> ConfirmAppliedAsync(TweakAction action, CancellationToken ct)
@@ -270,7 +433,7 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         if (action is AppxPackageAction)
         {
             // Windows can finish removing the package in the background after the deployment returns.
-            for (var attempt = 0; attempt < 4 && detected == ActionState.NotApplied; attempt++)
+            for (var attempt = 0; attempt < 4 && detected != ActionState.Applied; attempt++)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
                 platform.Apps.Refresh();
@@ -286,26 +449,29 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
         var record = backups.Get(tweak.Id)
             ?? throw new TweakException($"Не удалось откатить «{tweak.Title}»: исходное состояние отсутствует в истории.");
         EnsureCompatibleBackup(tweak, record);
+        RequireSettledAppx(tweak, record);
         RefreshExternalState();
         log.LogInformation("Откат твика {Tweak}", tweak.Id);
         var errors = new List<string>();
 
         for (var i = tweak.Actions.Count - 1; i >= 0; i--)
         {
-            if (!record.Actions[i].Applicable) continue;
+            if (!record.Actions[i].NeedsRestore) continue;
             var action = tweak.Actions[i];
             try
             {
                 ct.ThrowIfCancellationRequested();
-                if (await MatchesBackupAsync(action, record.Actions[i].State, ct))
-                    continue;
-                await action.RevertAsync(platform, record.Actions[i].State, ct);
-                if (!await MatchesBackupAsync(action, record.Actions[i].State, ct))
-                    throw new InvalidOperationException($"Возврат {action.Describe()} пока не подтверждён. Исходный бэкап сохранён.");
+                await RestoreActionAsync(action, record.Actions[i].State, ct,
+                    boot => record = SaveAction(record, i, WithAppxBoot(record.Actions[i], boot)));
+                if (action is PowerPlanAction plan)
+                    await plan.RemoveUnchangedCopyAsync(platform, record.Actions[i].PowerCopyFingerprint, ct);
+                record = SaveAction(record, i, Untouched);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 log.LogError(ex, "Не удалось откатить {Action} твика {Tweak}", action.Describe(), tweak.Id);
+                if (record.Actions[i].AppxStartedInBoot is not null)
+                    throw new TweakException(AppxRestartRequired, ex);
                 // Необязательность допускает пропуск применения, но не потерю данных для отката.
                 errors.Add(ex.Message);
             }
@@ -326,12 +492,13 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             return false;
 
         EnsureCompatibleBackup(tweak, record);
+        RequireSettledAppx(tweak, record);
 
         platform.Apps.Refresh();
         for (var i = 0; i < tweak.Actions.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            if (!record.Actions[i].Applicable) continue;
+            if (!record.Actions[i].NeedsRestore) continue;
             if (!await MatchesBackupAsync(tweak.Actions[i], record.Actions[i].State, ct))
                 return false;
         }
@@ -353,19 +520,6 @@ public sealed class TweakEngine(PlatformServices platform, IBackupStore backups,
             log.LogWarning(ex, "Не удалось сравнить состояние {Action} с бэкапом, выполняем откат", action.Describe());
             return false;
         }
-    }
-
-    private async Task<BackupRecord> CaptureAsync(TweakDefinition tweak, CancellationToken ct)
-    {
-        var actions = new List<ActionBackup>();
-        foreach (var action in tweak.Actions)
-        {
-            ct.ThrowIfCancellationRequested();
-            actions.Add(await action.DetectAsync(platform, ct) == ActionState.NotApplicable
-                ? new ActionBackup(false, null)
-                : new ActionBackup(true, await action.CaptureAsync(platform, ct)));
-        }
-        return new BackupRecord { TweakId = tweak.Id, Title = tweak.Title, AppliedAt = DateTimeOffset.Now, Actions = actions, ActionTargets = Targets(tweak) };
     }
 
     private static string[] Targets(TweakDefinition tweak) => tweak.Actions.Select(a => $"{a.GetType().Name}:{a.Describe()}").ToArray();

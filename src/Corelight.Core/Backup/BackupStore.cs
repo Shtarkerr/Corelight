@@ -1,11 +1,23 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Corelight.Core.Backup;
 
-/// <summary>Исходное состояние одного действия. Applicable=false — цели не было на момент применения.</summary>
-public sealed record ActionBackup(bool Applicable, string? State);
+public enum ActionBackupPhase { Untouched, Pending, Applied }
 
-public sealed class BackupRecord
+/// <summary>Отсутствие фазы означает снимок старого формата.</summary>
+public sealed record ActionBackup(bool Applicable, string? State, ActionBackupPhase? Phase = null, string? PowerCopyFingerprint = null)
+{
+    internal bool NeedsRestore => Phase is null ? Applicable : Phase != ActionBackupPhase.Untouched;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? AppxStartedInBoot { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AppxOperationReturned { get; init; }
+}
+
+public sealed record BackupRecord
 {
     public required string TweakId { get; init; }
 
@@ -129,7 +141,10 @@ public sealed class JsonBackupStore : IBackupStore
         foreach (var record in records)
         {
             if (record is null || string.IsNullOrWhiteSpace(record.TweakId) || string.IsNullOrWhiteSpace(record.Title)
-                || record.Actions is null || record.Actions.Any(a => a is null)
+                || record.Actions is null || record.Actions.Any(a => a is null ||
+                    a.Phase is { } phase && (!Enum.IsDefined(phase) || a.Applicable != (phase != ActionBackupPhase.Untouched)) ||
+                    a.AppxStartedInBoot is not null && !a.NeedsRestore ||
+                    a.AppxOperationReturned && (a.Phase != ActionBackupPhase.Pending || a.AppxStartedInBoot is not null))
                 || (record.ActionTargets is not null && record.ActionTargets.Count != record.Actions.Count)
                 || !result.TryAdd(record.TweakId, record))
                 throw new JsonException("Некорректная или повторяющаяся запись бэкапа.");

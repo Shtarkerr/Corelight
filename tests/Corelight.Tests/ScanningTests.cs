@@ -42,6 +42,7 @@ public class ScanningTests
         ]);
 
         Assert.Equal(new[] { "optional", "manual" }, report.ManualItems.Select(s => s.Tweak.Id));
+        Assert.Equal("unknown", Assert.Single(report.UnknownItems).Tweak.Id);
         Assert.All(report.ManualItems, item => Assert.False(item.IsPreselected));
         Assert.Equal("suggestion", Assert.Single(report.Suggestions, s => s.IsPreselected).Tweak.Id);
     }

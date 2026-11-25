@@ -44,6 +44,32 @@ public sealed class CleanupTests : IDisposable
         _shell, NullLogger<DiskCleanupService>.Instance, getDirectoryScopes: getScopes ?? (() => CleanupCatalog.DirectoryScopes(_root, Desktop, Documents, [])));
 
     [Fact]
+    public void Only_expected_local_shortcut_roots_are_allowed()
+    {
+        Assert.Equal(Desktop, CleanupCatalog.ShortcutRoot(Desktop, Desktop, _root));
+        Assert.Null(CleanupCatalog.ShortcutRoot(Path.GetPathRoot(Desktop)!, Desktop, _root));
+        Assert.Null(CleanupCatalog.ShortcutRoot(Path.Combine(_root, "Redirected"), Desktop, _root));
+    }
+
+    [Fact]
+    public async Task Downloads_inside_new_sync_root_cannot_be_cleaned()
+    {
+        var file = FileAt(Downloads, "local-document.txt", 0);
+        string[] syncRoots = [];
+        var service = new DiskCleanupService([], _shell, NullLogger<DiskCleanupService>.Instance,
+            () => Downloads, getSyncRoots: () => syncRoots);
+        var scan = await service.AnalyzeAsync();
+        Assert.Single(scan.Items);
+        syncRoots = [Path.GetDirectoryName(Downloads)!];
+
+        await Assert.ThrowsAsync<IOException>(() => service.CleanAsync(scan, ["downloads"]));
+        Assert.True(File.Exists(file));
+        var next = await service.AnalyzeAsync();
+        Assert.Empty(next.Items);
+        Assert.Contains(next.Issues, issue => issue.Path == "Загрузки");
+    }
+
+    [Fact]
     public async Task Analysis_is_read_only_and_only_includes_old_files_in_allowed_roots()
     {
         var old = FileAt(Temp, "old.tmp"); var recent = FileAt(Temp, "recent.tmp", 0); var personal = FileAt(_root, "personal.txt");
@@ -356,6 +382,19 @@ public sealed class CleanupTests : IDisposable
     }
 
     [Fact]
+    public async Task Found_totals_report_the_recycle_bin_as_its_own_scope()
+    {
+        _shell.BinBytes = 1024;
+        var page = new CleanupViewModel(Service(), new AppState(null!), null!, NullLogger<CleanupViewModel>.Instance);
+
+        await page.AnalyzeCommand.ExecuteAsync(null);
+
+        Assert.Contains("файлов 0 · 0 Б", page.Status);
+        Assert.Contains("В корзине 1 · 1 КБ", page.Status);
+        Assert.Equal("Выбрано: файлов 1 · 1 КБ", page.SelectionSummary);
+    }
+
+    [Fact]
     public async Task Cleanup_page_keeps_file_selection_category_and_details_in_sync()
     {
         FileAt(Temp, "old.tmp");
@@ -378,7 +417,7 @@ public sealed class CleanupTests : IDisposable
         var file = viewModel.VisibleItems.First();
         file.IsSelected = true;
         Assert.True(cache.IsSelected);
-        Assert.Contains("файлов 2", viewModel.SelectionSummary);
+        Assert.StartsWith("Выбрано: файлов 3 · ", viewModel.SelectionSummary);
         file.IsSelected = false;
         Assert.False(cache.IsSelected);
 
@@ -400,7 +439,9 @@ public sealed class CleanupTests : IDisposable
         Assert.Empty(viewModel.VisibleItems);
         Assert.Equal("fixture.txt", Assert.Single(viewModel.RecycleBinItems).Name);
         Assert.True(recycle.IsSelected);
-        Assert.Contains("+ корзина", viewModel.SelectionSummary);
+        Assert.Equal($"Выбрано: файлов 4 · {CleanupSize.Format(_shell.BinBytes + 98)}", viewModel.SelectionSummary);
+        recycle.IsSelected = false;
+        Assert.Equal("Выбрано: файлов 3 · 98 Б", viewModel.SelectionSummary);
 
         viewModel.SelectNoneCommand.Execute(null);
         Assert.Same(recycle, viewModel.SelectedCategory);

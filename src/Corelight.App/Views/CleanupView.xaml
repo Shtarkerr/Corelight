@@ -154,7 +154,8 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Размер" Binding="{Binding Size}" SortMemberPath="Item.Bytes" Width="85" IsReadOnly="True">
+                            <DataGridTextColumn Header="Размер" Binding="{Binding Size}" SortMemberPath="Item.Bytes"
+                                                Width="Auto" MinWidth="96" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextAlignment" Value="Right" />
@@ -177,7 +178,8 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Размер" Binding="{Binding Size, Mode=OneWay}" SortMemberPath="Item.Bytes" Width="85">
+                            <DataGridTextColumn Header="Размер" Binding="{Binding Size, Mode=OneWay}" SortMemberPath="Item.Bytes"
+                                                Width="Auto" MinWidth="96">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextAlignment" Value="Right" />

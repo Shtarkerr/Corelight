@@ -23,6 +23,8 @@ public sealed partial class StartupItemViewModel : ObservableObject
     public string Location => Item.Location;
     public string Command => Item.Command;
     public bool IsKnownUpdater => Item.IsKnownUpdater;
+    public string StartupHint => Item.Name.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+        ? "OneDrive начнёт синхронизацию только после запуска." : "Обычно можно отключить";
 
     [ObservableProperty]
     public partial bool IsEnabled { get; set; }

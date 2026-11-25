@@ -1,3 +1,5 @@
+using Corelight.Core.Platform;
+
 namespace Corelight.Core.Cleanup;
 
 internal static class CleanupCatalog
@@ -36,12 +38,29 @@ internal static class CleanupCatalog
         foreach (var basePath in new[] { local, common })
             foreach (var folder in new[] { "ReportArchive", "ReportQueue" })
                 rules.Add(new("error-reports", Path.Combine(basePath, "Microsoft", "Windows", "WER", folder), week));
-        foreach (var folder in new[] { Environment.SpecialFolder.DesktopDirectory, Environment.SpecialFolder.CommonDesktopDirectory, Environment.SpecialFolder.Programs, Environment.SpecialFolder.CommonPrograms })
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var publicProfile = Path.Combine(Path.GetPathRoot(windows) ?? "", "Users", "Public");
+        foreach (var (folder, expected, ancestor) in new[]
         {
-            var path = Environment.GetFolderPath(folder);
-            if (!string.IsNullOrWhiteSpace(path)) rules.Add(new(ShortcutsId, path, day, CleanupFilter.BrokenShortcuts));
-        }
+            (Environment.SpecialFolder.DesktopDirectory, Path.Combine(profile, "Desktop"), profile),
+            (Environment.SpecialFolder.CommonDesktopDirectory, Path.Combine(publicProfile, "Desktop"), publicProfile),
+            (Environment.SpecialFolder.Programs, Path.Combine(roaming, "Microsoft", "Windows", "Start Menu", "Programs"), profile),
+            (Environment.SpecialFolder.CommonPrograms, Path.Combine(common, "Microsoft", "Windows", "Start Menu", "Programs"), common),
+        })
+            if (ShortcutRoot(Environment.GetFolderPath(folder), expected, ancestor) is { } root)
+                rules.Add(new(ShortcutsId, root, day, CleanupFilter.BrokenShortcuts));
         return rules.AsReadOnly();
+    }
+
+    internal static string? ShortcutRoot(string path, string expected, string ancestor)
+    {
+        if (!Path.IsPathFullyQualified(path) || !Path.IsPathFullyQualified(ancestor) ||
+            path.StartsWith(@"\\", StringComparison.Ordinal) || !CleanupFiles.IsWithin(path, ancestor))
+            return null;
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return string.Equals(full, Path.GetFullPath(expected), StringComparison.OrdinalIgnoreCase) &&
+            new DriveInfo(Path.GetPathRoot(full)!).DriveType == DriveType.Fixed ? full : null;
     }
 
     internal static IReadOnlyList<CleanupDirectoryScope> GetDirectoryScopes()
@@ -55,7 +74,7 @@ internal static class CleanupCatalog
                 or Environment.SpecialFolder.MyDocuments or Environment.SpecialFolder.UserProfile))
             .Select(folder => Environment.GetFolderPath(folder, option))
             .Concat(new[] { WindowsCleanupShell.GetDownloadsPath() })
-            .Concat(new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" }.Select(Environment.GetEnvironmentVariable));
+            .Concat(WindowsOneDriveControl.GetSyncRoots(new WindowsRegistryAccess(), profile).Where(Path.IsPathFullyQualified));
         return DirectoryScopes(profile, desktop, documents, protectedPaths);
     }
 
@@ -91,7 +110,7 @@ internal static class CleanupCatalog
         return new(root, paths.Where(path => CleanupFiles.IsWithin(path, root)).ToArray());
     }
 
-    internal static CleanupRule? DownloadsRule(string? path, IReadOnlyList<CleanupRule> existingRules)
+    internal static CleanupRule? DownloadsRule(string? path, IReadOnlyList<CleanupRule> existingRules, IEnumerable<string> syncRoots)
     {
         if (string.IsNullOrWhiteSpace(path)) return null;
         if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal))
@@ -111,6 +130,7 @@ internal static class CleanupCatalog
         ];
         if ((!string.IsNullOrEmpty(profile) && IsSameOrWithin(profile, folder)) ||
             protectedFolders.Select(Environment.GetFolderPath).Concat(existingRules.Select(rule => rule.Root))
+                .Concat(syncRoots.Where(Path.IsPathFullyQualified))
                 .Any(protectedPath => !string.IsNullOrEmpty(protectedPath) && (IsSameOrWithin(folder, protectedPath) || IsSameOrWithin(protectedPath, folder))))
             throw new IOException("Папка «Загрузки» пересекается с профилем, системной папкой или другой категорией очистки.");
 

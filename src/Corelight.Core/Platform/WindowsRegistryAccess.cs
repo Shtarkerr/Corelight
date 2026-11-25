@@ -12,11 +12,15 @@ public sealed class WindowsRegistryAccess : IRegistryAccess
 
         var raw = key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
         if (raw is null)
+        {
+            if (key.GetValueNames().Contains(name, StringComparer.OrdinalIgnoreCase))
+                throw new NotSupportedException($"Существующее значение «{keyPath}\\{name}» не удалось прочитать без потерь.");
             return null;
+        }
 
         var kind = key.GetValueKind(name);
         return kind is RegistryValueKind.Unknown or RegistryValueKind.None
-            ? null
+            ? throw new NotSupportedException($"Тип {kind} значения «{keyPath}\\{name}» не поддерживается.")
             : RegValue.FromObject(kind, raw);
     }
 

@@ -12,6 +12,9 @@ public interface IPowerControl
 
     /// <summary>Создаёт копию штатной схемы Windows с заданным GUID.</summary>
     Task DuplicateSchemeAsync(Guid source, Guid destination, CancellationToken ct = default);
+
+    Task<string> GetSchemeFingerprintAsync(Guid scheme, CancellationToken ct = default);
+    Task DeleteSchemeAsync(Guid scheme, CancellationToken ct = default);
 }
 
 /// <summary>Работа со схемами питания через powercfg. Из вывода берутся только GUID, поэтому язык системы не важен.</summary>
@@ -37,6 +40,15 @@ public sealed partial class WindowsPowerControl(IProcessRunner runner) : IPowerC
 
     public Task DuplicateSchemeAsync(Guid source, Guid destination, CancellationToken ct = default) =>
         RunAsync(ct, "/duplicatescheme", source.ToString(), destination.ToString());
+
+    public async Task<string> GetSchemeFingerprintAsync(Guid scheme, CancellationToken ct = default)
+    {
+        var result = await RunAsync(ct, "/qh", scheme.ToString());
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(result.Output)));
+    }
+
+    public Task DeleteSchemeAsync(Guid scheme, CancellationToken ct = default) =>
+        RunAsync(ct, "/delete", scheme.ToString());
 
     private async Task<ProcessResult> RunAsync(CancellationToken ct, params string[] args)
     {

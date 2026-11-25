@@ -31,7 +31,7 @@ public sealed class AdvancedRefreshTests
         var engine = sys.CreateEngine();
         var scanner = new Scanner(catalog, engine, new HardwareProbe(sys.Registry, NullLogger<HardwareProbe>.Instance));
         var state = new AppState(scanner);
-        var page = new AdvancedViewModel(new StartupManager(sys.Registry), null!, state, null!, NullLogger<AdvancedViewModel>.Instance);
+        var page = new AdvancedViewModel(new StartupManager(sys.Registry, _ => ""), null!, state, null!, NullLogger<AdvancedViewModel>.Instance);
 
         await page.OnNavigatedToAsync();
         Assert.Equal(tweak.Id, Assert.Single(Items(page)).Tweak.Id);
@@ -59,7 +59,7 @@ public sealed class AdvancedRefreshTests
         var scanner = new Scanner(catalog, engine, new HardwareProbe(sys.Registry, NullLogger<HardwareProbe>.Instance));
         var state = new AppState(scanner);
         state.SetUserScan(await scanner.ScanAsync(new HardwareProfile()));
-        var page = new AdvancedViewModel(new StartupManager(sys.Registry), null!, state, null!, NullLogger<AdvancedViewModel>.Instance);
+        var page = new AdvancedViewModel(new StartupManager(sys.Registry, _ => ""), null!, state, null!, NullLogger<AdvancedViewModel>.Instance);
 
         await engine.ApplyAsync(tweak);
         state.MarkSystemChanged();

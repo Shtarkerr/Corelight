@@ -40,7 +40,12 @@ public abstract class TweakCardViewModel(TweakDefinition tweak) : ObservableObje
 public sealed partial class AdvancedTweakItemViewModel(TweakDefinition tweak, Func<AdvancedTweakItemViewModel, Task> apply)
     : TweakCardViewModel(tweak)
 {
-    public string ActionText => Tweak.Category == TweakCategory.Apps ? "Удалить" : "Применить";
+    public string ActionText => Tweak.Category switch
+    {
+        TweakCategory.Apps => "Удалить",
+        TweakCategory.Services => "Отключить",
+        _ => "Применить",
+    };
 
     [RelayCommand]
     private Task ApplyAsync() => apply(this);

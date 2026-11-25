@@ -1,6 +1,9 @@
 using System.Globalization;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Win32;
+using Corelight.Core;
 using Corelight.Core.Actions;
 using Corelight.Core.Platform;
 using Corelight.Core.SystemInfo;
@@ -37,6 +40,15 @@ public sealed class WindowsIntegrationTests : IDisposable
         Assert.Equal(value, _registry.GetValue(Key, "V"));
         _registry.DeleteValue(Key, "V");
         Assert.Null(_registry.GetValue(Key, "V"));
+    }
+
+    [Fact]
+    public void Unsupported_existing_registry_value_does_not_look_absent()
+    {
+        using var key = Registry.CurrentUser.CreateSubKey(_subKey);
+        key.SetValue("Opaque", new byte[] { 1, 2, 3 }, RegistryValueKind.None);
+
+        Assert.Throws<NotSupportedException>(() => _registry.GetValue(Key, "Opaque"));
     }
 
     [Fact]
@@ -87,6 +99,86 @@ public sealed class WindowsIntegrationTests : IDisposable
         var active = await power.GetActiveSchemeAsync();
 
         Assert.Contains(active, await power.ListSchemesAsync());
+        Assert.Matches("^[0-9A-F]{64}$", await power.GetSchemeFingerprintAsync(active));
+    }
+
+    [Fact]
+    public void Appx_inventory_agrees_with_the_current_users_package_registration()
+    {
+        const string package = "Microsoft.DesktopAppInstaller";
+        var native = new Windows.Management.Deployment.PackageManager();
+        var registered = native.FindPackagesForUser(string.Empty, WindowsAppxControl.ExpectedFamily(package)).Any();
+        var apps = new WindowsAppxControl(_runner, NullLogger<WindowsAppxControl>.Instance);
+
+        Assert.Equal(registered, apps.GetPackageState(package).CurrentUser);
+    }
+
+    [Fact]
+    public void Protected_data_directory_rejects_insecure_permissions_and_redirection()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Corelight.Tests.Acl-" + Guid.NewGuid().ToString("N"));
+        var safe = Path.Combine(root, "safe");
+        var redirected = Path.Combine(root, "redirected");
+        Directory.CreateDirectory(root);
+        try
+        {
+            ProtectedDataDirectory.EnsureDirectory(safe);
+            Directory.CreateSymbolicLink(redirected, safe);
+            Assert.Throws<IOException>(() => ProtectedDataDirectory.EnsureDirectory(redirected, migrateLegacyPermissions: true));
+
+            var info = new DirectoryInfo(safe);
+            var acl = info.GetAccessControl();
+            var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+            acl.AddAccessRule(new FileSystemAccessRule(users, FileSystemRights.Write, AccessControlType.Allow));
+            info.SetAccessControl(acl);
+
+            Assert.Throws<UnauthorizedAccessException>(() => ProtectedDataDirectory.EnsureDirectory(safe, migrateLegacyPermissions: true));
+        }
+        finally
+        {
+            if (Directory.Exists(redirected)) Directory.Delete(redirected);
+            if (Directory.Exists(safe)) Directory.Delete(safe);
+            Directory.Delete(root);
+        }
+    }
+
+    [Fact]
+    public void Protected_data_directory_migrates_inherited_programdata_permissions_and_preserves_history()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "Corelight.Tests.LegacyAcl-" + Guid.NewGuid().ToString("N"));
+        var legacy = Path.Combine(root, "Corelight");
+        var logs = Path.Combine(legacy, "logs");
+        var history = Path.Combine(legacy, "backup.json");
+        var inherited = new DirectorySecurity();
+        inherited.SetSecurityDescriptorSddlForm("O:BAD:PAI(A;OICIIO;GA;;;CO)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;CI;DCLCRPCR;;;BU)");
+        new DirectoryInfo(root).Create(inherited);
+        try
+        {
+            Directory.CreateDirectory(legacy);
+            Directory.CreateDirectory(logs);
+            File.WriteAllText(history, "[{\"test\":true}]");
+            Assert.Throws<UnauthorizedAccessException>(() => ProtectedDataDirectory.EnsureDirectory(legacy));
+
+            var before = new DirectoryInfo(legacy).GetAccessControl();
+            try { ProtectedDataDirectory.EnsureDirectory(legacy, migrateLegacyPermissions: true); }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(before.GetSecurityDescriptorSddlForm(AccessControlSections.All), ex);
+            }
+            ProtectedDataDirectory.EnsureDirectory(logs, migrateLegacyPermissions: true);
+            ProtectedDataDirectory.ValidateFileIfPresent(history);
+
+            Assert.True(new DirectoryInfo(legacy).GetAccessControl().AreAccessRulesProtected);
+            Assert.Equal("[{\"test\":true}]", File.ReadAllText(history));
+            ProtectedDataDirectory.EnsureDirectory(legacy, migrateLegacyPermissions: true);
+        }
+        finally
+        {
+            if (File.Exists(history)) File.Delete(history);
+            if (Directory.Exists(logs)) Directory.Delete(logs);
+            if (Directory.Exists(legacy)) Directory.Delete(legacy);
+            Directory.Delete(root);
+        }
     }
 
     [Fact]

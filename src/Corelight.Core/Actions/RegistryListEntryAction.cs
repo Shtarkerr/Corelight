@@ -5,79 +5,108 @@ using Corelight.Core.Tweaks;
 
 namespace Corelight.Core.Actions;
 
-/// <summary>
-/// Меняет одну пару "ключ=значение" в строке вида "A=1;B=0;" и не трогает остальные пары.
-/// Нужно, например, для DirectXUserGlobalSettings, где рядом лежат настройки Auto HDR и VRR.
-/// </summary>
+/// <summary>Меняет только последнюю действующую пару «ключ=значение» в строке настроек.</summary>
 public sealed class RegistryListEntryAction : TweakAction
 {
+    private sealed record Snapshot(bool Exists, string? Segment, bool HasContent = false);
+
     public required string Path { get; init; }
-
     public required string Name { get; init; }
-
     public required string Key { get; init; }
-
     public required string Value { get; init; }
 
     public override Task<ActionState> DetectAsync(PlatformServices p, CancellationToken ct)
     {
-        var entries = Parse(p.Registry.GetValue(Path, Name)?.Data);
-        var applied = entries.TryGetValue(Key, out var v) && v == Value;
-        return Task.FromResult(applied ? ActionState.Applied : ActionState.NotApplied);
+        var snapshot = ReadSnapshot(p);
+        var value = snapshot.Segment is { } segment ? segment.Trim()[(segment.Trim().IndexOf('=') + 1)..] : null;
+        return Task.FromResult(value == Value ? ActionState.Applied : ActionState.NotApplied);
     }
 
-    public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct)
+    public override Task<string?> CaptureAsync(PlatformServices p, CancellationToken ct) =>
+        Task.FromResult<string?>(JsonSerializer.Serialize(ReadSnapshot(p)));
+
+    public override bool CapturedStateMatches(string? current, string? original)
     {
-        var value = p.Registry.GetValue(Path, Name);
-        if (value is not null && value.Kind != RegistryValueKind.String)
-            throw new InvalidOperationException($"Ожидалась строка настроек в {Path}\\{Name}.");
-        var entry = Parse(value?.Data).GetValueOrDefault(Key);
-        return Task.FromResult(entry is null ? null : JsonSerializer.Serialize(entry));
+        var now = Parse(current);
+        var before = Parse(original);
+        return now.Segment == before.Segment
+            && (now.Exists == before.Exists || !before.Exists && now.HasContent);
     }
-
-    private string? OriginalEntry(string? captured) => captured is null ? null
-        : captured.StartsWith('{') ? Parse(RegistryValueAction.Deserialize(captured)?.Data).GetValueOrDefault(Key)
-        : JsonSerializer.Deserialize<string>(captured);
-
-    public override bool CapturedStateMatches(string? current, string? original) => OriginalEntry(current) == OriginalEntry(original);
 
     public override Task ApplyAsync(PlatformServices p, CancellationToken ct)
     {
-        var entries = Parse(p.Registry.GetValue(Path, Name)?.Data);
-        entries[Key] = Value;
-        p.Registry.SetValue(Path, Name, new RegValue(RegistryValueKind.String, Format(entries)));
+        var segments = ReadSegments(p);
+        var index = segments.FindLastIndex(IsTarget);
+        if (index >= 0)
+            segments[index] = segments[index][..(segments[index].IndexOf('=') + 1)] + Value;
+        else
+            Insert(segments, $"{Key}={Value}");
+        p.Registry.SetValue(Path, Name, RegValue.String(string.Join(';', segments)));
         return Task.CompletedTask;
     }
 
     public override Task RevertAsync(PlatformServices p, string? captured, CancellationToken ct)
     {
-        var entries = Parse(p.Registry.GetValue(Path, Name)?.Data);
-        var original = OriginalEntry(captured);
-        if (original is null) entries.Remove(Key);
-        else entries[Key] = original;
-        if (entries.Count == 0) p.Registry.DeleteValue(Path, Name);
-        else p.Registry.SetValue(Path, Name, RegValue.String(Format(entries)));
+        var before = Parse(captured);
+        var segments = ReadSegments(p);
+        var index = segments.FindLastIndex(IsTarget);
+        if (before.Segment is null)
+        {
+            if (index >= 0) segments.RemoveAt(index);
+        }
+        else if (index >= 0)
+            segments[index] = before.Segment;
+        else
+            Insert(segments, before.Segment);
+
+        var result = string.Join(';', segments);
+        if (result.Length == 0 && !before.Exists) p.Registry.DeleteValue(Path, Name);
+        else p.Registry.SetValue(Path, Name, RegValue.String(result));
         return Task.CompletedTask;
     }
 
-    public override string Describe() => $@"{Path}\{Name} [{Key}]";
-
-    // Порядок пар сохраняется, чтобы не менять строку сильнее, чем нужно.
-    internal static OrderedDictionary<string, string> Parse(string? data)
+    private List<string> ReadSegments(PlatformServices p)
     {
-        var result = new OrderedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (string.IsNullOrEmpty(data))
-            return result;
-
-        foreach (var part in data.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var eq = part.IndexOf('=');
-            if (eq > 0)
-                result[part[..eq]] = part[(eq + 1)..];
-        }
-        return result;
+        var original = p.Registry.GetValue(Path, Name);
+        if (original is null) return [];
+        if (original.Kind != RegistryValueKind.String)
+            throw new InvalidOperationException($"Ожидалась строка настроек в {Describe()}.");
+        return original.Data.Split(';').ToList();
     }
 
-    internal static string Format(OrderedDictionary<string, string> entries) =>
-        string.Concat(entries.Select(e => $"{e.Key}={e.Value};"));
+    private Snapshot ReadSnapshot(PlatformServices p)
+    {
+        var segments = ReadSegments(p);
+        return new(segments.Count != 0, segments.FindLast(IsTarget), segments.Count > 1 || segments.FirstOrDefault() is { Length: > 0 });
+    }
+
+    private static void Insert(List<string> segments, string segment)
+    {
+        var index = segments.Count > 0 && segments[^1].Length == 0 ? segments.Count - 1 : segments.Count;
+        segments.Insert(index, segment);
+    }
+
+    private Snapshot Parse(string? captured)
+    {
+        if (captured is null) return new(false, null);
+
+        using var json = JsonDocument.Parse(captured);
+        if (json.RootElement.ValueKind == JsonValueKind.String)
+            return new(true, $"{Key}={json.RootElement.GetString()}");
+        if (json.RootElement.TryGetProperty(nameof(RegValue.Kind), out _))
+        {
+            var old = RegistryValueAction.Deserialize(captured);
+            return new(old is not null, old?.Data.Split(';').LastOrDefault(IsTarget));
+        }
+        return JsonSerializer.Deserialize<Snapshot>(captured) ?? throw new InvalidDataException("Некорректный снимок графических настроек.");
+    }
+
+    private bool IsTarget(string segment)
+    {
+        var part = segment.AsSpan().TrimStart();
+        var separator = part.IndexOf('=');
+        return separator > 0 && part[..separator].Equals(Key, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public override string Describe() => $@"{Path}\{Name} [{Key}]";
 }

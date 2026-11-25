@@ -17,7 +17,7 @@ public class CatalogTests
     }
 
     [Fact]
-    public void Advanced_and_caution_tweaks_explain_consequences()
+    public void Advanced_tweaks_explain_consequences()
     {
         var catalog = TweakCatalog.LoadEmbedded();
         var withoutWarning = catalog.Tweaks

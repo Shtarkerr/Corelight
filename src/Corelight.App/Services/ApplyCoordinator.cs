@@ -35,13 +35,13 @@ public sealed class ApplyCoordinator(
 
     private async Task<IReadOnlyList<TweakDefinition>?> ConfirmAppRemovalsAsync(IReadOnlyList<TweakDefinition> tweaks)
     {
-        if (!tweaks.Any(tweak => tweak.Actions.Any(action => action is AppxPackageAction))) return tweaks;
+        if (!tweaks.Any(tweak => tweak.Actions.Any(action => action is AppxPackageAction or CopilotDesktopAction))) return tweaks;
 
         using var cancel = new CancellationTokenSource();
         IReadOnlyList<AppRestoreIssue> issues;
         try
         {
-            using (state.BeginBusy("Проверка возврата приложений через Microsoft Store…", cancel.Cancel))
+            using (state.BeginBusy("Проверка возможности возврата приложений…", cancel.Cancel))
                 issues = await Task.Run(() => engine.CheckAppRestoresAsync(tweaks, cancel.Token), cancel.Token);
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
@@ -74,6 +74,8 @@ public sealed class ApplyCoordinator(
         var warnings = new List<string>();
         var succeeded = 0;
         var pending = 0;
+        var partial = 0;
+        var unchanged = 0;
         var notStarted = 0;
 
         using (state.BeginBusy(""))
@@ -84,27 +86,32 @@ public sealed class ApplyCoordinator(
                 var verb = apply ? "Применение" : "Откат";
                 if (tweak.Category == TweakCategory.Apps)
                     verb = apply ? "Удаление" : "Возврат приложения";
-                var waitHint = apply && tweak.Category == TweakCategory.Apps ? "\nWindows: до 3 минут на пакет" : "";
+                var waitHint = apply && tweak.Category == TweakCategory.Apps ? "\nWindows может выполнять удаление несколько минут." : "";
                 state.BusyText = (tweaks.Count == 1 ? $"{verb}: {tweak.Title}…" : $"{verb} ({i + 1} из {tweaks.Count}): {tweak.Title}…") + waitHint;
 
                 try
                 {
-                    var confirmed = true;
                     if (apply)
                     {
                         if (engine.GetApplyConflictReason(tweak, catalog.Tweaks) is { } reason)
                             throw new TweakException(reason);
                         var result = await Task.Run(() => engine.ApplyAsync(tweak));
                         warnings.AddRange(result.Warnings.Select(w => $"{tweak.Title}: {w}"));
-                        confirmed = result.Confirmed;
+                        switch (result.Outcome)
+                        {
+                            case ApplyOutcome.Applied: succeeded++; break;
+                            case ApplyOutcome.Partial: partial++; break;
+                            case ApplyOutcome.Unconfirmed: pending++; break;
+                            default: unchanged++; break;
+                        }
                         if (result.RequiresReboot) state.RebootRequired = true;
+                        if (result.Outcome is ApplyOutcome.AlreadyApplied or ApplyOutcome.NotApplicable) continue;
                     }
                     else
                     {
                         await Task.Run(() => engine.RevertAsync(tweak));
+                        succeeded++;
                     }
-                    if (confirmed) succeeded++;
-                    else pending++;
                     if (tweak.RequiresReboot)
                         state.RebootRequired = true;
                 }
@@ -122,9 +129,9 @@ public sealed class ApplyCoordinator(
             state.MarkSystemChanged();
         }
 
-        if (failures.Count > 0 || pending > 0 || warnings.Count > 0 || skippedApps > 0 || showSummary)
-            await ShowSummaryAsync(apply, succeeded, pending, notStarted, failures, warnings, skippedApps);
-        return failures.Count == 0 && pending == 0 && skippedApps == 0;
+        if (failures.Count > 0 || pending > 0 || partial > 0 || unchanged > 0 || warnings.Count > 0 || skippedApps > 0 || showSummary)
+            await ShowSummaryAsync(apply, succeeded, pending, partial, unchanged, notStarted, failures, warnings, skippedApps);
+        return failures.Count == 0 && pending == 0 && partial == 0 && skippedApps == 0;
     }
 
     private async Task<bool> EnsureRestorePointAsync()
@@ -137,10 +144,10 @@ public sealed class ApplyCoordinator(
         using (state.BeginBusy("Создание точки восстановления Windows… Это может занять до минуты."))
             result = await restorePoints.CreateAsync("Corelight: перед оптимизацией");
 
-        if (result is RestorePointResult.ProtectionDisabled or RestorePointResult.NotCreated)
+        if (result == RestorePointResult.ProtectionDisabled)
         {
             var choice = await dialogs.ShowAsync(
-                result == RestorePointResult.ProtectionDisabled ? "Защита системы выключена" : "Создание точки не подтверждено",
+                "Защита системы выключена",
                 "Включите защиту системного диска, чтобы повторить создание точки. Для точек потребуется место на диске.\n\n" +
                 "Настройки сохраняются в истории; возврат приложений может требовать интернета и ручной установки.",
                 "Включить и создать", "Продолжить без точки");
@@ -186,12 +193,14 @@ public sealed class ApplyCoordinator(
         return true;
     }
 
-    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, int notStarted, List<string> failures, List<string> warnings, int skippedApps)
+    private Task ShowSummaryAsync(bool apply, int succeeded, int pending, int partial, int unchanged, int notStarted, List<string> failures, List<string> warnings, int skippedApps)
     {
         var text = new StringBuilder();
         text.AppendLine(apply ? $"Применено изменений: {succeeded}." : $"Отменено изменений: {succeeded}.");
         if (skippedApps > 0) text.AppendLine($"Пропущено приложений: {skippedApps}.");
         if (pending > 0) text.AppendLine($"Результат пока не подтверждён: {pending}.");
+        if (partial > 0) text.AppendLine($"Применено частично: {partial}.");
+        if (unchanged > 0) text.AppendLine($"Уже применено или недоступно: {unchanged}.");
         if (notStarted > 0) text.AppendLine($"Остальные изменения не запускались: {notStarted}. Проверьте состояние приложения в истории перед повторной попыткой.");
         if (failures.Count > 0)
         {
@@ -210,7 +219,7 @@ public sealed class ApplyCoordinator(
         if (state.RebootRequired)
             text.AppendLine().Append("Часть изменений вступит в силу после перезагрузки.");
 
-        var title = failures.Count > 0 ? "Готово, но с ошибками" : pending > 0 || warnings.Count > 0 || skippedApps > 0 ? "Готово с замечаниями" : "Готово";
+        var title = failures.Count > 0 ? "Готово, но с ошибками" : pending > 0 || partial > 0 || warnings.Count > 0 || skippedApps > 0 ? "Готово с замечаниями" : "Готово";
         return dialogs.ShowInfoAsync(title, text.ToString().TrimEnd());
     }
 }

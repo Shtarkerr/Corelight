@@ -49,9 +49,23 @@
             </DockPanel>
         </Border>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+        <!-- Выделяем место справа для полосы, которая накладывается на область прокрутки. -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,-16,0"
                       Visibility="{Binding HasScan, Converter={StaticResource BoolToVisibility}}">
-            <StackPanel>
+            <StackPanel Margin="0,0,16,0">
+                <Expander Header="{Binding UnknownHeader}" Margin="0,0,0,12"
+                          Visibility="{Binding HasUnknownItems, Converter={StaticResource BoolToVisibility}}">
+                    <ItemsControl ItemsSource="{Binding UnknownItems}" Margin="12,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,6">
+                                    <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Tweak.Title}" />
+                                    <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding UnavailableReason}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Expander>
                 <Expander IsExpanded="{Binding IsManualExpanded, Mode=TwoWay}" Margin="0,0,0,16" Padding="16,12"
                           AutomationProperties.Name="{Binding ManualItemsHeader}"
                           Background="{DynamicResource SubtleFillColorSecondaryBrush}"

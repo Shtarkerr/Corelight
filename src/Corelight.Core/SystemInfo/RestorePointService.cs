@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Management;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
-using Corelight.Core.Platform;
 
 namespace Corelight.Core.SystemInfo;
 
@@ -10,7 +9,7 @@ public enum RestorePointResult { Created, ProtectionDisabled, NotCreated, Failed
 
 internal interface ISystemRestoreAccess
 {
-    uint LatestSequenceNumber();
+    bool ContainsPoint(string description);
     uint Create(string description);
     uint Enable(string drive);
 }
@@ -41,30 +40,27 @@ internal sealed class WindowsSystemRestoreAccess : ISystemRestoreAccess
         return Convert.ToUInt32(result["ReturnValue"]);
     }
 
-    public uint LatestSequenceNumber()
+    public bool ContainsPoint(string description)
     {
-        using var searcher = new ManagementObjectSearcher(@"root\default", "SELECT SequenceNumber FROM SystemRestore");
+        using var searcher = new ManagementObjectSearcher(@"root\default", "SELECT Description FROM SystemRestore");
         using var results = searcher.Get();
-        uint latest = 0;
         foreach (ManagementBaseObject item in results)
-            using (item) latest = Math.Max(latest, Convert.ToUInt32(item["SequenceNumber"]));
-        return latest;
+            using (item)
+                if (string.Equals(item["Description"] as string, description, StringComparison.Ordinal))
+                    return true;
+        return false;
     }
 }
 
 public sealed class RestorePointService
 {
-    private const string Key = @"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore";
-    private const string Frequency = "SystemRestorePointCreationFrequency";
-    private readonly IRegistryAccess _registry;
     private readonly ILogger<RestorePointService> _log;
     private readonly ISystemRestoreAccess _access;
 
-    public RestorePointService(IRegistryAccess registry, ILogger<RestorePointService> log)
-        : this(registry, log, new WindowsSystemRestoreAccess()) { }
+    public RestorePointService(ILogger<RestorePointService> log) : this(log, new WindowsSystemRestoreAccess()) { }
 
-    internal RestorePointService(IRegistryAccess registry, ILogger<RestorePointService> log, ISystemRestoreAccess access)
-        => (_registry, _log, _access) = (registry, log, access);
+    internal RestorePointService(ILogger<RestorePointService> log, ISystemRestoreAccess access)
+        => (_log, _access) = (log, access);
 
     public string? LastError { get; private set; }
 
@@ -85,16 +81,12 @@ public sealed class RestorePointService
     private RestorePointResult Create(string description, CancellationToken ct)
     {
         LastError = null;
-        RegValue? original = null;
-        var changed = false;
+        var request = $"{description} [{Guid.NewGuid():N}]";
         try
         {
-            original = _registry.GetValue(Key, Frequency);
-            _registry.SetValue(Key, Frequency, RegValue.DWord(0));
-            changed = true;
-            var before = _access.LatestSequenceNumber();
-            var code = _access.Create(description);
-            _log.LogInformation("SystemRestore.CreateRestorePoint: код 0x{Code:X8}, предыдущая точка {Sequence}", code, before);
+            ct.ThrowIfCancellationRequested();
+            var code = _access.Create(request);
+            _log.LogInformation("SystemRestore.CreateRestorePoint: код 0x{Code:X8}, запрос {Request}", code, request);
             if (code is 1058u or 0x80070422u)
             {
                 LastError = "Windows сообщает, что служба восстановления системы отключена (0x80070422). Включите защиту системы и повторите создание точки.";
@@ -110,15 +102,14 @@ public sealed class RestorePointService
             for (var attempt = 0; attempt < 10; attempt++)
             {
                 ct.ThrowIfCancellationRequested();
-                var latest = _access.LatestSequenceNumber();
-                if (latest > before)
+                if (_access.ContainsPoint(request))
                 {
-                    _log.LogInformation("Создание точки восстановления подтверждено: {Sequence}", latest);
+                    _log.LogInformation("Создание точки восстановления подтверждено: {Request}", request);
                     return RestorePointResult.Created;
                 }
                 Thread.Sleep(500);
             }
-            LastError = "Windows приняла запрос, но новая точка восстановления не появилась в течение 5 секунд. Проверьте защиту системы и свободное место на системном диске.";
+            LastError = "Точка Corelight не появилась в списке Windows. Возможно, действует штатное ограничение частоты создания точек. Проверьте защиту системы и существующие точки.";
             _log.LogWarning("{Reason}", LastError);
             return RestorePointResult.NotCreated;
         }
@@ -136,17 +127,6 @@ public sealed class RestorePointService
             _log.LogWarning(ex, "Не удалось создать точку восстановления");
             return RestorePointResult.Failed;
         }
-        finally
-        {
-            if (changed)
-            {
-                try
-                {
-                    if (original is null) _registry.DeleteValue(Key, Frequency);
-                    else _registry.SetValue(Key, Frequency, original);
-                }
-                catch (Exception ex) { _log.LogWarning(ex, "Не удалось вернуть частоту создания точек восстановления"); }
-            }
-        }
+
     }
 }

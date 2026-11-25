@@ -80,9 +80,9 @@ public class ComponentPresenceTests
         var engine = sys.CreateEngine();
         Assert.Equal(TweakState.NotApplicable, await engine.DetectAsync(tweak));
         sys.Registry.DenyWrites = true;
-        await engine.ApplyAsync(tweak);
+        Assert.Equal(ApplyOutcome.NotApplicable, (await engine.ApplyAsync(tweak)).Outcome);
         Assert.Empty(sys.Registry.Values);
-        await engine.RevertAsync(tweak);
+        Assert.Null(sys.Backups.Get(tweak.Id));
         sys.Registry.DenyWrites = false;
 
         foreach (var action in tweak.Actions.OfType<RegistryValueAction>())

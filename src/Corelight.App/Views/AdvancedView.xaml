@@ -38,7 +38,7 @@
                             <TextBlock Style="{StaticResource ItemTitle}" Text="{Binding Title}" />
                             <Border Style="{StaticResource Badge}" Margin="8,0,0,0"
                                     Visibility="{Binding IsKnownUpdater, Converter={StaticResource BoolToVisibility}}">
-                                <TextBlock Style="{StaticResource BadgeText}" Text="Обычно можно отключить" />
+                                <TextBlock Style="{StaticResource BadgeText}" Text="{Binding StartupHint}" />
                             </Border>
                         </StackPanel>
                         <TextBlock Margin="0,2,0,0" Style="{StaticResource CaptionText}" Text="{Binding Location}" />
@@ -101,8 +101,20 @@
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <TextBlock Grid.Row="1" Margin="0,6,0,12" Style="{StaticResource SecondaryText}"
-                       Text="{Binding SelectedSection.Info.Subtitle}" />
+            <StackPanel Grid.Row="1" Margin="0,6,0,12">
+                <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding SelectedSection.Info.Subtitle}" />
+                <TextBlock Text="{Binding TweakWarning}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource WarningText}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding TweakWarning}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
 
             <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
@@ -122,6 +134,8 @@
                        Text="Выключите автозапуск программы, чтобы она не открывалась при входе в Windows." />
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
+                    <TextBlock Style="{StaticResource WarningText}" Text="{Binding StartupWarning}"
+                               Visibility="{Binding HasStartupWarning, Converter={StaticResource BoolToVisibility}}" />
                     <TextBlock Style="{StaticResource SecondaryText}" Text="Записей автозагрузки не найдено."
                                Visibility="{Binding HasNoStartupItems, Converter={StaticResource BoolToVisibility}}" />
                     <ItemsControl ItemsSource="{Binding StartupItems}" />
