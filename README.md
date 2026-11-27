@@ -206,6 +206,8 @@ Corelight блокирует удаление, если обнаруживает
 
 [Сборка из исходников, тестирование и упаковка релизов](docs/DEVELOPMENT.md).
 
+[Code signing policy](docs/CODE_SIGNING.md).
+
 ## Лицензия
 
 [GPL-3.0](LICENSE). Лицензии сторонних компонентов перечислены в [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
