@@ -1,0 +1,42 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build and test Release
+        run: dotnet test Corelight.slnx -c Release -warnaserror --filter 'Category!=Integration'
+
+      - name: Build Setup and Portable
+        if: github.event_name != 'pull_request'
+        run: .\scripts\Build-Packages.ps1
+
+      - name: Upload Windows packages
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Corelight-win-x64
+          path: |
+            publish/packages/*/Corelight-*-Setup-win-x64.exe
+            publish/packages/*/Corelight-*-Portable-win-x64.exe
+          if-no-files-found: error
