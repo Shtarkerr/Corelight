@@ -39,12 +39,23 @@ public sealed partial class MainViewModel : ObservableObject
         Items =
         [
             new NavItem("Главная", SymbolRegular.Home24, home),
-            new NavItem("Результаты сканирования", SymbolRegular.TaskListLtr24, scan, "Результаты"),
             new NavItem("Расширенное", SymbolRegular.Wrench24, advanced),
             new NavItem("Очистка диска", SymbolRegular.Delete24, cleanup),
             new NavItem("История и откат", SymbolRegular.History24, history, StartsGroup: true),
         ];
-        navigation.NavigationRequested += type => SelectedItem = Items.First(i => i.Page.GetType() == type);
+        var results = new NavItem("Результаты сканирования", SymbolRegular.TaskListLtr24, scan, "Результаты");
+        if (state.UserScanVersion > 0)
+            Items.Insert(1, results);
+        state.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(AppState.UserScanVersion) && state.UserScanVersion == 1)
+                Items.Insert(1, results);
+        };
+        navigation.NavigationRequested += type =>
+        {
+            if (Items.FirstOrDefault(item => item.Page.GetType() == type) is { } item)
+                SelectedItem = item;
+        };
     }
 
     public AppState State { get; }

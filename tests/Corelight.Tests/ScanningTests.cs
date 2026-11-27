@@ -1,6 +1,7 @@
 using Corelight.App.Services;
 using Corelight.App.ViewModels;
 using Corelight.Core.Catalog;
+using Corelight.Core.Cleanup;
 using Corelight.Core.Scanning;
 using Corelight.Core.Tweaks;
 using Corelight.Core.SystemInfo;
@@ -12,6 +13,36 @@ namespace Corelight.Tests;
 
 public class ScanningTests
 {
+    [Fact]
+    public void Results_tab_appears_in_order_once_the_first_scan_completes()
+    {
+        var state = new AppState(null!);
+        var navigation = new NavigationService();
+        var results = new ScanResultsViewModel(state, null!, navigation, null!, NullLogger<ScanResultsViewModel>.Instance);
+        var main = new MainViewModel(state, navigation, null!, null!, NullLogger<MainViewModel>.Instance,
+            new HomeViewModel(state, null!, navigation, null!, NullLogger<HomeViewModel>.Instance), results,
+            new AdvancedViewModel(null!, null!, state, null!, NullLogger<AdvancedViewModel>.Instance),
+            new HistoryViewModel(null!, null!, null!, null!, state, NullLogger<HistoryViewModel>.Instance),
+            new CleanupViewModel(new DiskCleanupService([], null!, NullLogger<DiskCleanupService>.Instance), state,
+                null!, NullLogger<CleanupViewModel>.Instance));
+
+        Assert.Equal(new[] { "Главная", "Расширенное", "Очистка диска", "История и откат" },
+            main.Items.Select(item => item.DisplayTitle));
+        navigation.NavigateTo<ScanResultsViewModel>();
+        Assert.Null(main.CurrentPage);
+
+        var report = new ScanReport(new HardwareProfile(), []);
+        state.SetUserScan(report);
+        Assert.Equal(new[] { "Главная", "Результаты", "Расширенное", "Очистка диска", "История и откат" },
+            main.Items.Select(item => item.DisplayTitle));
+        navigation.NavigateTo<ScanResultsViewModel>();
+        Assert.Same(results, main.CurrentPage);
+        Assert.True(results.HasScan);
+
+        state.SetUserScan(report);
+        Assert.Single(main.Items, item => ReferenceEquals(item.Page, results));
+    }
+
     [Fact]
     public void Suggestions_are_sorted_by_descending_impact_and_keep_equal_items_in_order()
     {

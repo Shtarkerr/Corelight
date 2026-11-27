@@ -44,6 +44,7 @@ public sealed partial class AppState(Scanner scanner) : ObservableObject
         UserScanVersion++;
         LastScan = report;
         _lastScanVersion = ChangeVersion;
+        OnPropertyChanged(nameof(UserScanVersion));
     }
 
     public void ClearLastScan() => LastScan = null;

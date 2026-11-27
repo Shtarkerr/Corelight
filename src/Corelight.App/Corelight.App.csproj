@@ -10,6 +10,7 @@
     <AssemblyName>Corelight</AssemblyName>
     <RootNamespace>Corelight.App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\installer\Corelight.ico</ApplicationIcon>
     <Product>Corelight</Product>
     <Version>0.1.0-beta.6</Version>
   </PropertyGroup>

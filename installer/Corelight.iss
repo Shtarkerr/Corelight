@@ -66,7 +66,7 @@ Name: "{group}\Corelight"; Filename: "{app}\Corelight.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\Corelight"; Filename: "{app}\Corelight.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Corelight.exe"; Description: "Запустить Corelight"; Flags: postinstall nowait skipifsilent unchecked
+Filename: "{app}\Corelight.exe"; Description: "Запустить Corelight"; Flags: postinstall runascurrentuser nowait skipifsilent unchecked
 
 [Code]
 function InitializeUninstall(): Boolean;
